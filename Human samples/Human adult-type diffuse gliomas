@@ -7,42 +7,124 @@ library(ggplot2)
 
 # Load the metadata file and extract the mapping between sample ID and file name
 json_data <- fromJSON("metadata.cart.2025-11-10.json")
-sample_id <- sapply(json_data$associated_entities, function(x) x[1, 1])
-file_sample <- data.frame(
-  sample_id = sample_id,
-  file_name = json_data$file_name,
-  stringsAsFactors = FALSE)
+sample_id <- sapply(json_data$associated_entities,function(x){x[,1]})
+file_sample <- data.frame(sample_id,file_name=json_data$file_name)
 
-# Matrix construction and quality control
-dir_path <- "gdc_download_20251110_095245.136296/"
-count_files <- list.files(dir_path, pattern = "*.tsv", recursive = TRUE)
-count_file_basenames <- basename(count_files)
-data_list <- list()
+# Expression matrix construction and quality control
+count_file <- list.files("gdc_download_20251110_095245.136296/",pattern = "*.tsv",recursive = T)
+count_files_name <- strsplit(count_file,split = '/')
+count_file_name <- sapply(count_file_name,function(x){x[2]})
 
-for (i in seq_along(count_files)) {
-  path <- file.path(dir_path, count_files[i])
-  temp_data <- read.delim(path, comment.char = "#", header = FALSE)
-  if (i == 1) {
-    gene_info <- temp_data[7:nrow(temp_data), 1:3]
-    colnames(gene_info) <- c("ensembl_id", "gene_name", "gene_type")
-  }
-  current_counts <- temp_data[7:nrow(temp_data), 4, drop = FALSE]
-  current_sample_id <- file_sample$sample_id[file_sample$file_name == count_file_basenames[i]]
-  colnames(current_counts) <- current_sample_id
-  data_list[[i]] <- current_counts
+matrix=data.frame(matrix(nrow = 60660,ncol = 0))
+for (i in 1:length(count_file)){
+  path <- paste0('gdc_download_20251110_095245.136296//',count_file[i])
+  data <- read.delim(path,fill = TRUE,header = FALSE,row.names = 1)
+  colnames(data)=data[2,]
+  data <-data[-c(1:6),] 
+  data <-data[7]
+  colnames(data)<- file_sample$sample_id[which(file_sample$file_name == count_file_name[i])]
+  matrix <- cbind(matrix,data)
 }
 
-raw_matrix <- do.call(cbind, data_list)
-raw_matrix <- cbind(gene_info, raw_matrix)
+path <- paste0("gdc_download_20251110_095245.136296//",count_file[1])
+data <- as.matrix(read.delim(path,fill=T,header = F,row.names = 1))
+gene_name <- data[-c(1:6),1]
+matrix0 <- cbind(gene_name,matrix)
+gene_type <- data[-c(1:6),2]
+matrix0 <- cbind(gene_type,matrix0)
+matrix0 <- subset(matrix0,gene_type=="protein_coding")
+matrix0 <- aggregate(.~gene_name,max,data=matrix0)
 
-matrix_clean <- raw_matrix %>%
-  filter(gene_type == "protein_coding") %>%
-  group_by(gene_name) %>%
-  summarise(across(where(is.numeric), max)) %>%
-  column_to_rownames("gene_name")
+rownames(matrix0) <- matrix0[,1]
+matrix0 <- matrix0[,-1]
 
-expr_matrix <- as.matrix(matrix_clean)
-log_expr <- log2(expr_matrix + 1)
+expr <- as.matrix(matrix0)
+which(!sapply(expr, is.numeric))
+expr <- matrix(as.numeric(expr), nrow = nrow(expr), ncol = ncol(expr))
+rownames(expr) <- rownames(matrix0)
+colnames(expr) <- colnames(matrix0)
+expr.matrix <- log2(expr + 1)
+expr.matrix <- as.data.frame(expr.matrix)
 
-keep_genes <- rowSums(log_expr >= 0.01) >= (ncol(log_expr) * 0.05) # Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
-expr <- log_expr[keep_genes, ]
+filtered_expr_matrix <- expr.matrix[rowSums(expr.matrix < 0.01) < ncol(expr.matrix) * 0.05, ] #Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
+expr=filtered_expr_matrix
+
+# TLS sigantures
+Sig1 <- c("CCL2","CCL3","CCL4","CCL5","CCL8","CCL18",
+          "CCL19","CCL21","CXCL9","CXCL10","CXCL11","CXCL13")
+
+Sig2 <- c("CCL19","CCL21","CXCL13","CCR7","SELL",
+          "LAMP3","CXCR4","CD86","BCL6")
+
+Sig3 <- c("CD79A","CD79B","TNFRSF13C","BLK","CD22","CD37",
+          "MS4A1","NIBAN3","CD19","IKZF3","LINC00926",
+          "CXCR5","LTB","SELL","CCL19","POU2AF1",
+          "CXCL13","FCRLA","VPREB3","FCMR","AL928768.3",
+          "RASGRP2","TCF7","RIPOR2","RAC2","IL16",
+          "CCR7","CD52","TCL1A","ATP2A3")
+
+Fig. 1c
+# Correlation analysis (Spearman)
+calculate_gene_correlations_fast <- function(signature_genes, expr_matrix) {
+  available_genes <- signature_genes[signature_genes %in% rownames(expr_matrix)]
+  if (length(available_genes) == 0) return(NULL)
+  signature_avg <- colMeans(expr_matrix[available_genes, , drop = FALSE], na.rm = TRUE)
+  cor_stats <- apply(expr_matrix, 1, function(x) {
+    res <- cor.test(as.numeric(x), as.numeric(signature_avg), method = "spearman", exact = FALSE)
+    return(c(correlation = as.numeric(res$estimate), p_value = as.numeric(res$p.value)))
+  })
+  as.data.frame(t(cor_stats)) %>%
+    rownames_to_column("gene")
+}
+
+Sig_list <- list(Sig1 = Sig1, Sig2 = Sig2, Sig3 = Sig3)
+cor_results <- lapply(Sig_list, calculate_gene_correlations_fast, expr_matrix = expr)
+create_dual_gene_plot <- function(sig_name, expr_matrix, sig_list, cor_res_list, 
+                                  gene1 = "RORC", gene2 = "LTB") {
+
+  available <- sig_list[[sig_name]][sig_list[[sig_name]] %in% rownames(expr_matrix)]
+  signature_avg <- colMeans(expr_matrix[available, , drop = FALSE], na.rm = TRUE)
+  
+  plot_data <- data.frame(
+    sample = colnames(expr_matrix),
+    signature_score = as.numeric(signature_avg),
+    val1 = as.numeric(expr_matrix[gene1, ]),
+    val2 = as.numeric(expr_matrix[gene2, ])
+  )
+  
+  stats1 <- cor_res_list[[sig_name]] %>% filter(gene == gene1)
+  stats2 <- cor_res_list[[sig_name]] %>% filter(gene == gene2)
+  
+  label1 <- paste0(gene1, ": R = ", round(stats1$correlation, 3), 
+                   ", P = ", format.pval(stats1$p_value, digits = 2))
+  label2 <- paste0(gene2, ": R = ", round(stats2$correlation, 3), 
+                   ", P = ", format.pval(stats2$p_value, digits = 2))
+  
+  ggplot(plot_data) +
+    # Gene 1 (RORC)
+    geom_point(aes(x = val1, y = signature_score, color = gene1), alpha = 0.5, size = 1.5) +
+    geom_smooth(aes(x = val1, y = signature_score, color = gene1), 
+                method = "lm", se = TRUE,  alpha = 0.2) +
+    # Gene 2 (LTB)
+    geom_point(aes(x = val2, y = signature_score, color = gene2), alpha = 0.5, size = 1.5) +
+    geom_smooth(aes(x = val2, y = signature_score, color = gene2), 
+                method = "lm", se = TRUE,  alpha = 0.2) +
+
+    scale_color_manual(values = setNames(c("#2166AC", "#B2182B"), c(gene1, gene2))) +
+    labs(title = paste("Correlation with", sig_name),
+         x = "Gene Expression Level",
+         y = "Signature Average Expression",
+         color = "Target Gene") +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+          legend.position = "top") +
+
+    annotate("text", x = -Inf, y = Inf, label = label1, 
+             hjust = -0.1, vjust = 1.5, color = "#2166AC", size = 3.5, fontface = "bold") +
+    annotate("text", x = -Inf, y = Inf, label = label2, 
+             hjust = -0.1, vjust = 3.0, color = "#B2182B", size = 3.5, fontface = "bold")
+}
+
+plot1 <- create_dual_gene_plot("Sig1", expr, Sig_list, cor_results)
+plot2 <- create_dual_gene_plot("Sig2", expr, Sig_list, cor_results)
+plot3 <- create_dual_gene_plot("Sig3", expr, Sig_list, cor_results)
