@@ -1,1 +1,48 @@
-1
+# Load required libraries
+library(jsonlite)
+library(tidyverse)
+library(patchwork)
+library(readxl)
+library(ggplot2)
+
+# Load the metadata file and extract the mapping between sample ID and file name
+json_data <- fromJSON("metadata.cart.2025-11-10.json")
+sample_id <- sapply(json_data$associated_entities, function(x) x[1, 1])
+file_sample <- data.frame(
+  sample_id = sample_id,
+  file_name = json_data$file_name,
+  stringsAsFactors = FALSE)
+
+# Matrix construction and quality control
+dir_path <- "gdc_download_20251110_095245.136296/"
+count_files <- list.files(dir_path, pattern = "*.tsv", recursive = TRUE)
+count_file_basenames <- basename(count_files)
+data_list <- list()
+
+for (i in seq_along(count_files)) {
+  path <- file.path(dir_path, count_files[i])
+  temp_data <- read.delim(path, comment.char = "#", header = FALSE)
+  if (i == 1) {
+    gene_info <- temp_data[7:nrow(temp_data), 1:3]
+    colnames(gene_info) <- c("ensembl_id", "gene_name", "gene_type")
+  }
+  current_counts <- temp_data[7:nrow(temp_data), 4, drop = FALSE]
+  current_sample_id <- file_sample$sample_id[file_sample$file_name == count_file_basenames[i]]
+  colnames(current_counts) <- current_sample_id
+  data_list[[i]] <- current_counts
+}
+
+raw_matrix <- do.call(cbind, data_list)
+raw_matrix <- cbind(gene_info, raw_matrix)
+
+matrix_clean <- raw_matrix %>%
+  filter(gene_type == "protein_coding") %>%
+  group_by(gene_name) %>%
+  summarise(across(where(is.numeric), max)) %>%
+  column_to_rownames("gene_name")
+
+expr_matrix <- as.matrix(matrix_clean)
+log_expr <- log2(expr_matrix + 1)
+
+keep_genes <- rowSums(log_expr >= 0.01) >= (ncol(log_expr) * 0.05) # Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
+expr <- log_expr[keep_genes, ]
