@@ -39,7 +39,7 @@ fit2 <- eBayes(fit2)
 results <- topTable(fit2, number = Inf, adjust.method = "fdr")
 
 # Fig. 1a
-# Gene Set Enrichment Analysis (GSEA) - KEGG Pathways
+# Gene Set Enrichment Analysis (GSEA) of KEGG Pathways
 results$Symbol <- rownames(results)
 Dif_ID <- bitr(results$Symbol, 
                fromType = "SYMBOL", 
