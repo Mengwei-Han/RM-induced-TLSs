@@ -1,1 +1,79 @@
+# Load required libraries
+library(data.table)
+library(tidyverse)
+library(limma)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(pheatmap)
 
+
+data <- fread("GSE271059_raw_counts.csv.gz",header = TRUE)
+colnames(data)[colnames(data)=="GeneFeature"]="Gene"
+metadata=fread("GSE271059_metadata.csv.gz",header = TRUE)
+metadata=column_to_rownames(metadata,var = "Sample_names")
+
+# Date normalization and transformation
+input <- fread("All_hg19gene_len.txt")
+data <- left_join(data,input,by="Gene") 
+data <- na.omit(data)
+data <- column_to_rownames(data,var ="Gene")
+kb <- data$Length / 1000
+countdata <- data[,1:64]
+rpk <- countdata / kb
+tpm <- t(t(rpk)/colSums(rpk) * 1000000)
+expr.TPM=normalizeBetweenArrays(tpm)
+expr.TPM=log2(expr.TPM+1)
+expr.TPM=as.data.frame(expr.TPM)
+
+# Differential Expression Analysis (Control vs. TLS)
+group <- factor(metadata$TLS_status, 
+                levels = c("control", "TLS"))
+design <- model.matrix(~ 0 + group)
+colnames(design) <- levels(group)
+
+fit <- lmFit(expr.TPM, design)
+contrast_matrix <- makeContrasts(TLS - control, levels = design)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+results <- topTable(fit2, number = Inf, adjust.method = "fdr")
+
+# Fig. 1a
+# Gene Set Enrichment Analysis (GSEA) - KEGG Pathways
+results$Symbol <- rownames(results)
+Dif_ID <- bitr(results$Symbol, 
+               fromType = "SYMBOL", 
+               toType = "ENTREZID", 
+               OrgDb = "org.Hs.eg.db")
+FC.Dif_ID <- merge(Dif_ID, results, by.x = "SYMBOL", by.y = "Symbol")
+FC.Dif_ID <- FC.Dif_ID[order(FC.Dif_ID$logFC, decreasing = T),]
+genelist <- FC.Dif_ID$logFC
+names(genelist) <- FC.Dif_ID$ENTREZID
+
+gsea <- gseKEGG(genelist, organism = "hsa",pvalueCutoff = 0.05)
+top15 <- gsea@result[order(gsea@result$NES, decreasing = TRUE), ][1:15, ]
+top15$Description <- factor(top15$Description, levels = top15$Description[order(top15$NES)])
+plot <- ggplot(top15, aes(x = NES, y = Description)) +
+  geom_point(aes(size = enrichmentScore, color = pvalue)) +
+  scale_color_gradient(low = "firebrick3", high = "blue") + 
+  theme_bw() +
+  labs(x = "NES", y = "", 
+       size = "Enrichment Score", 
+       color = "P value")
+
+# Fig. 1b
+# Expression Profiling of Th17/ILC3 Signature Genes
+Th17_all <- expr.TPM[c("AHR","STAT3","TGFB1","RARA",
+                    "TGFBR2","IRF4","NFATC1","NFATC2","IL6","IL2RB",
+                    "IL21R","IL2RG","CD3E","CD4","RUNX1",
+                    "RORC","LTB","IL17RA","IL1R1","IL1B"),]
+Th17_all <- as.matrix(Th17_all)
+metadata2 <- metadata[,c(2,3,4,5,6,8)]
+plot_Th17 <- pheatmap(Th17_all,
+                       name = "Th17_associated genes", 
+                       scale = "row", 
+                       color = colorRampPalette(c("blue","floralwhite", "firebrick3"))(100),
+                       show_rownames = TRUE,
+                       cluster_rows = T,
+                       cluster_cols = T,
+                       annotation_col = metadata2)
