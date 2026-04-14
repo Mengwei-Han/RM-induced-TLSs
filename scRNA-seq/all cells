@@ -1,4 +1,4 @@
-# 
+# Load required libraries
 library(Seurat)
 library(tidyverse)
 library(ggplot2)
@@ -6,7 +6,9 @@ library(harmony)
 library(DoubletFinder)
 library(ggrastr)
 library(ggplot2)
-#读取数据
+
+# Data normalization, quality control, integration
+
 C <- readRDS("C_seurat.rds")
 MP <- readRDS("MP_seurat.rds")
 RM <- readRDS("RM_seurat.rds")
@@ -21,13 +23,11 @@ Idents(RM) <- "orig.ident"
 RMP$orig.ident<-factor(rep("RMP",ncol(RMP)))
 Idents(RMP) <- "orig.ident"
 
-#数据清洗
 C_F<- subset(C, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
 MP_F<- subset(MP, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
 RM_F <- subset(RM, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
 RMP_F <- subset(RMP, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
 
-#归一化
 C_F <- NormalizeData(C_F,normalization.method = "LogNormalize", scale.factor = 10000)
 MP_F <- NormalizeData(MP_F,normalization.method = "LogNormalize", scale.factor = 10000)
 RM_F <- NormalizeData(RM_F,normalization.method = "LogNormalize", scale.factor = 10000)
@@ -43,7 +43,6 @@ MP_F <- ScaleData(MP_F, features = MP_F.genes, verbose = FALSE)
 RM_F <- ScaleData(RM_F, features = RM_F.genes, verbose = FALSE)
 RMP_F <- ScaleData(RMP_F, features = RMP_F.genes, verbose = FALSE)
 
-#降维
 C_F <- RunPCA(C_F)
 MP_F <- RunPCA(MP_F)
 RM_F <- RunPCA(RM_F)
@@ -54,7 +53,6 @@ MP_F <- RunUMAP(MP_F,dims=1:20)
 RM_F <- RunUMAP(RM_F,dims=1:20)
 RMP_F <- RunUMAP(RMP_F,dims=1:20)
 
-#去除双细胞
 run_doublet_finder <- function(seu_obj) {
   sweep.res.list <- paramSweep_v3(seu_obj, PCs = 1:20, sct = FALSE)
   sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
@@ -86,7 +84,7 @@ RMP_clean <- final_samples$RMP
 
 scRNA=merge(C_clean,y=c(MP_clean,RM_clean,RMP_clean))
 
-#harmony整合
+# Dimensionality reduction and unsupervised clustering
 scRNA.harmony <- NormalizeData(scRNA, normalization.method = "LogNormalize", scale.factor = 10000)
 scRNA.harmony <- FindVariableFeatures(scRNA.harmony, selection.method = "vst", nfeatures = 3000)
 scRNA.harmony <- ScaleData(scRNA.harmony, verbose = FALSE)                                                               
@@ -99,7 +97,7 @@ scRNA.harmony <- FindClusters(scRNA.harmony, resolution = 1)
 
 saveRDS(scRNA.harmony, file = "scRNA.harmony.rds")
 
-######
+# Annotation and compositional analysis (Fig. 6b)####################################################################################
 Idents(scRNA.harmony) <- "seurat_clusters"
 FeaturePlot(scRNA.harmony,features =c("Trac","Cd3e","Cd8a","Cd4",
                                    "Ncr1","Cd79a","Cd74","H2-Ab1","Cd14"),cols = c("lightgrey", "red4"))
@@ -111,14 +109,11 @@ ID <- c("1"="CD4+ T", "8"="CD4+ T", "9"="CD4+ T", "12"="CD4+ T", "5"="CD4+ T", "
 scRNA.harmony<- RenameIdents(scRNA.harmony, ID)
 scRNA.harmony$celltype <- Idents(scRNA.harmony)
 cell_color <- c( "#F3B970","#E96149", "#801480", "#659E33","#3AB7BC")
-###所有细胞散点图
 plot_all_cell <- DimPlot(scRNA.harmony, reduction = "umap", label = F,pt.size = 0.01,cols=cell_color)
-#所有细胞maker基因表达小提琴图
 plot_cell_marker <- VlnPlot(scRNA.harmony, features =c("Trac","Cd3e","Cd8a","Cd4","Ncr1",
                                                        "Cd79a","Cd74","H2-Ab1","Cd14"), 
                             group.by = "celltype",pt.size = 0)
 
-######细胞占比图
 cell_proportion <- scRNA.harmony@meta.data %>%
   group_by(orig.ident, celltype) %>%
   summarise(count = n()) %>%
