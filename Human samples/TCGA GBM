@@ -45,10 +45,11 @@ colnames(expr) <- colnames(matrix0)
 expr.matrix <- log2(expr + 1)
 expr.matrix <- as.data.frame(expr.matrix)
 
-filtered_expr_matrix <- expr.matrix[rowSums(expr.matrix < 0.01) < ncol(expr.matrix) * 0.05, ] #Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
+filtered_expr_matrix <- expr.matrix[rowSums(expr.matrix < 0.01) < ncol(expr.matrix) * 0.05, ] 
+#Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
 expr=filtered_expr_matrix
 
-# Spearman correlation analysis of target gene expression (RORC and LTB) with three TLS signature scores (Fig. 1c)
+# Spearman correlation analysis of target gene expression with three TLS signature scores (Fig. 1c) ###################
 Sig1 <- c("CCL2","CCL3","CCL4","CCL5","CCL8","CCL18",
           "CCL19","CCL21","CXCL9","CXCL10","CXCL11","CXCL13")
 
@@ -62,7 +63,6 @@ Sig3 <- c("CD79A","CD79B","TNFRSF13C","BLK","CD22","CD37",
           "RASGRP2","TCF7","RIPOR2","RAC2","IL16",
           "CCR7","CD52","TCL1A","ATP2A3")
 
-# 
 calculate_gene_correlations_fast <- function(signature_genes, expr_matrix) {
   available_genes <- signature_genes[signature_genes %in% rownames(expr_matrix)]
   if (length(available_genes) == 0) return(NULL)
