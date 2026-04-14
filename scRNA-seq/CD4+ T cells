@@ -1,1 +1,130 @@
 
+library(CellChat)
+library(ggalluvial)
+library(ggsci)
+library(pheatmap)
+
+# Annotations and clustering of CD4+ T cells
+scRNA.harmony <- readRDS("scRNA.harmony.rds")
+Idents(scRNA.harmony) <- "celltype"
+CD4 <- subset(scRNA.harmony, idents = "CD4+ T")
+CD4 <- NormalizeData(CD4) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+CD4 <- FindNeighbors(CD4, reduction = "harmony", dims = 1:30)
+CD4 <- FindClusters(CD4, resolution = 1)
+CD4 <- RunUMAP(CD4, dims = 1:30, reduction = "harmony")
+
+DefaultAssay(CD4) <- "RNA"
+markers <- FindAllMarkers(object = CD4, test.use = "wilcox",
+                         only.pos = T,
+                         min.pct = 0.25,
+                         logfc.threshold = 0.25)
+all.markers <- markers %>% dplyr::select(gene,everything()) %>%subset(p_val<0.05)
+top30 <- all.markers %>% group_by(cluster) %>% top_n(n=30,wt=avg_log2FC)
+
+CD4_ID <- c("3"  = "ISG Th", "4"  = "Tem", "2"  = "Tn", "10" = "Th17", "7" = "Tfh/Th1", 
+            "5"  = "Trm/Th1", "6"  = "Treg", "9" = "Treg", "8"  = "blood Tcm", "1"  = "Trm", "0"  = "Trm")
+
+CD4 <- RenameIdents(CD4, CD4_ID)
+CD4$celltype <- Idents(CD4)
+target_order <- c("Tn", "Tem","Trm", "Trm/Th1", "Tfh/Th1",
+                   "Th17","Treg","ISG Th","blood Tcm")
+
+Idents(CD4)="celltype"
+Idents(CD4) <- factor(Idents(CD4), levels = target_order)
+CD4$celltype <- factor(CD4$celltype, levels = target_order)
+
+# UMAP plot of CD4+ T cells showing identified clusters (Fig. 6c) ###################################################################
+cell_color <- c( "#3AB7BC", "#2672A7","#659E33", "#CD5D14", "#DBA514", 
+              "#D3221E", "#C5AED0", "#ACD286", "#A2C7DB")
+DimPlot(CD4, reduction = "umap", pt.size = 0.5,cols=cell_color)
+
+# Dot plot showing the expression of canonical marker genes across clusters (Fig. 6b) ###############################################
+marker_gene <- c("Cxcr5","Ccr7","Sell","Slamf6", "Tcf7", "S1pr1",  "Il7r",
+              "Nkg7",  "Ccl5","Gzmk","Gzmb","Runx3","Tbx21","Ifng",
+              "Pdcd1","Lag3","Havcr2","Ctla4","Tox", "Bhlhe40","Cxcr6",  "Itga1", 
+              "Zfp683","Ltb","Bcl6","Cd200","Il21", "Il17a", "Rorc", 
+              "Foxp3", "Ikzf2", "Il2ra","Il10", 
+              "Ifit1", "Irf7","Stat1","Anxa1")
+
+plot_marker <- DotPlot(CD4, features = marker_gene, group.by = "celltype", dot.scale = 5) + 
+                       RotatedAxis() + 
+                       scale_colour_gradient2(low = "blue4", mid = "cornsilk", high = "red3") + 
+                       scale_y_discrete(limits = rev(target_order)) +
+                       labs(title = "CD4+ T Subsets Marker Expression", x = "Genes", y = "Cell Types")
+
+# UMAP density plot of the four treatment groups (Fig. 6e) ##########################################################################
+plot_data <- FetchData(CD4, vars = c("UMAP_1", "UMAP_2", "orig.ident"))
+plot_density <- ggplot(plot_data, aes(x = UMAP_1, y = UMAP_2))  +
+                     geom_point(color = "grey90", size = 0.1, alpha = 0.1) +
+                                stat_density_2d(aes(fill = after_stat(nlevel)), 
+                                geom = "polygon", 
+                                bins = 10, 
+                                n = 200) +
+                     geom_density_2d(color = "black", 
+                                     linewidth = 0.2, 
+                                     bins = 10, 
+                                     alpha = 0.8) +
+                     scale_fill_gradientn(colours = c("white", "grey90", "red3"), 
+                                          values = c(0, 0.2,1)) +
+                     facet_wrap(~orig.ident) +
+                     theme_void()
+
+# Distribution of cell cluster Proportions in the four treatment groups (Fig. 6f) ####################################################
+cell_counts <- CD4@meta.data %>%
+              group_by(orig.ident, celltype) %>%
+              summarise(count = n()) %>%
+              group_by(orig.ident) %>%
+              mutate(percentage = count / sum(count) * 100)
+              target_sample_order <- c("C", "MP", "RM", "RMP")
+
+plot_proportion <- ggplot(cell_counts, aes(x = orig.ident, y = percentage, fill = celltype)) +
+                   geom_bar(stat = "identity", position = "stack", width = 0.7) +
+                   scale_fill_manual(values = cell_color) + 
+                   labs(x = "Sample", y = "Percentage (%)", fill = "Cluster") +
+                   theme_classic() + 
+                   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+                   scale_x_discrete(limits = target_sample_order)
+
+# Interaction strength between CD4+ T cells and B cells (Fig. 6g) ####################################################################
+Idents(scRNA.harmony) <- "celltype"
+B_cells <- subset(scRNA.harmony, idents = "B")
+B_cells$celltype <- "B_cells"
+Idents(B_cells) <- "B_cells"
+Idents(CD4) <- "celltype"
+
+CellChatDB <- CellChatDB.mouse
+chat_obj <- merge(B_cells, y = CD4)
+data.input <- GetAssayData(chat_obj, assay = "RNA", slot = "data")
+identity <- data.frame(group = Idents(chat_obj), row.names = names(Idents(chat_obj)))
+cellchat <- createCellChat(object = data.input, meta = identity, group.by = "group")
+CellChatDB.use <- subsetDB(CellChatDB, search = c("Secreted Signaling", "Cell-Cell Contact"))
+cellchat@DB <- CellChatDB.use
+cellchat <- subsetData(cellchat) 
+cellchat <- identifyOverExpressedGenes(cellchat)
+cellchat <- identifyOverExpressedInteractions(cellchat)
+cellchat <- projectData(cellchat, PPI.mouse)
+cellchat <- computeCommunProb(cellchat,raw.use=T)
+cellchat<-filterCommunication(cellchat,min.cells=3)
+cellchat <- computeCommunProbPathway(cellchat)
+cellchat <- aggregateNet(cellchat)
+
+weight.mat <- cellchat@net$weight
+thresh <- quantile(weight.mat[weight.mat > 0], 0.5)
+weight.mat[weight.mat < thresh] <- 0
+cell_color2 <- c("#F94D92","#A2C7DB","#2672A7","#3AB7BC", "#659E33","#ACD286","#DBA514", 
+               "#CD5D14","#D3221E", "#C5AED0")
+netVisual_chord_cell(cellchat,net = weight.mat, 
+                     slot.name = "net", lab.cex = 0.8,
+                     color.use =cell_color2,
+                     title.name = "Interaction strength")
+
+# Average expression of genes Related to T-B Crosstalk in CD4+ T Cells (Fig. 6h) ###################################################
+genes <- c("Cxcl13", "Il21", "Xcl1", "Il6st", "Cd40lg", "Btla", 
+           "Tnfsf8", "Tnfsf4", "Tnfsf13b", "Ctla4", "Ltb","Icos", "Il4",
+           "Cd28","Tgfb1","Mif",'Fasl',"Pdcd1")
+avg_exp <- AverageExpression(CD4, features = genes, group.by = "celltype", slot = "data")$RNA
+avg_exp_scaled <- t(scale(t(avg_exp)))
+
+pheatmap(avg_exp_scaled, 
+         color = colorRampPalette(c("blue4", "cornsilk", "red3"))(100),
+         cluster_cols = F)
