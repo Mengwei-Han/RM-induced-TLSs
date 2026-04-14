@@ -38,7 +38,7 @@ fit2 <- contrasts.fit(fit, contrast_matrix)
 fit2 <- eBayes(fit2)
 results <- topTable(fit2, number = Inf, adjust.method = "fdr")
 
-# Gene Set Enrichment Analysis (GSEA) of KEGG pathways (Fig. 1a) #######################################################
+# Gene Set Enrichment Analysis (GSEA) of KEGG pathways (Fig. 1a) ####################################################################
 results$Symbol <- rownames(results)
 Dif_ID <- bitr(results$Symbol, 
                fromType = "SYMBOL", 
@@ -60,7 +60,7 @@ plot <- ggplot(top15, aes(x = NES, y = Description)) +
        size = "Enrichment Score", 
        color = "P value")
 
-# Expression Profiling of Th17/ILC3 Signature Genes (Fig. 1b) #########################################################
+# Expression Profiling of Th17/ILC3 Signature Genes (Fig. 1b) ######################################################################
 Th17_all <- expr.TPM[c("AHR","STAT3","TGFB1","RARA",
                     "TGFBR2","IRF4","NFATC1","NFATC2","IL6","IL2RB",
                     "IL21R","IL2RG","CD3E","CD4","RUNX1",
