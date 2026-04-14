@@ -49,6 +49,8 @@ expr.matrix <- as.data.frame(expr.matrix)
 filtered_expr_matrix <- expr.matrix[rowSums(expr.matrix < 0.01) < ncol(expr.matrix) * 0.05, ] #Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
 expr=filtered_expr_matrix
 
+
+# Fig. 1c
 # TLS sigantures
 Sig1 <- c("CCL2","CCL3","CCL4","CCL5","CCL8","CCL18",
           "CCL19","CCL21","CXCL9","CXCL10","CXCL11","CXCL13")
@@ -63,7 +65,6 @@ Sig3 <- c("CD79A","CD79B","TNFRSF13C","BLK","CD22","CD37",
           "RASGRP2","TCF7","RIPOR2","RAC2","IL16",
           "CCR7","CD52","TCL1A","ATP2A3")
 
-Fig. 1c
 # Correlation analysis (Spearman)
 calculate_gene_correlations_fast <- function(signature_genes, expr_matrix) {
   available_genes <- signature_genes[signature_genes %in% rownames(expr_matrix)]
