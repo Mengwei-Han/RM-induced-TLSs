@@ -1,4 +1,4 @@
-#
+# Load required libraries
 library(dplyr)
 library(data.table)
 library(limma)
@@ -15,7 +15,8 @@ library(GSVA)
 library(ggpubr)
 library(tidyr)
 library(enrichplot)
-#
+
+# 数据归一化、转换和过滤
 data <- read_excel("gene expression.xlsx", col_names = TRUE) %>% column_to_rownames(var = "GeneSymbol")
 fpkm_to_tpm <- function(fpkm) {return(exp(log(fpkm) - log(sum(fpkm)) + log(1e6)))}
 tpms <- apply(data, 2, fpkm_to_tpm)
@@ -25,13 +26,12 @@ expr.TPM=log2(expr.TPM+1)
 expr.TPM=as.data.frame(expr.TPM)
 expr.TPM=filter(expr.TPM,rowMeans(expr.TPM[,1:4])>1|rowMeans(expr.TPM[,5:8])>1|rowMeans(expr.TPM[,9:12])>1|rowMeans(expr.TPM[,13:16])>1)
 
-# 
+# Fig. 4b
+# PCA分析给四组
 samples <- colnames(expr.TPM)
 groups <- c(rep("C", 4), rep("M", 4), rep("R", 4), rep("RM", 4))
 groups <- factor(groups, levels = c("C", "M", "R", "RM"))
 
-# Fig. 4b
-# PCA
 expr_scaled <- t(expr.TPM)
 gene_var <- apply(expr_scaled, 2, var)
 constant_genes <- sum(gene_var == 0)
