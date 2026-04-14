@@ -337,7 +337,7 @@ p_Protumorigenic_molecules <- pheatmap(Protumorigenic_molecules,
                                       cellwidth =20,
                                       cellheight =8)
 
-# GSEA of differentially expressed genes in R@M vs. control, demonstrating the Th17 cell differentiation pathway (Fig. S4l) ########
+# GSEA of differentially expressed genes in R@M vs. control, demonstrating the Th17 cell differentiation pathway (Fig. 4l) #########
 FC.Dif_ID <- merge(CRM_Dif,Dif_ID,by.x=0, by.y=1)
 FC.Dif_ID <- FC.Dif_ID[order(FC.Dif_ID$logFC, decreasing = T),]
 genelist <- FC.Dif_ID$logFC
@@ -346,7 +346,7 @@ names(genelist) <- FC.Dif_ID$ENTREZID
 gsea <- gseKEGG(genelist, organism = "mmu",pvalueCutoff = 0.05)
 gsea_Th17 <- gseaplot2(gsea,geneSetID = "mmu04659",pvalue_table = T)
 
-# ssGSEA-based enrichment scores for the three TLS signatures (Fig. S4o) ###########################################################
+# ssGSEA-based enrichment scores for the three TLS signatures (Fig. 4o) ############################################################
 gene_signatures <- list(
   TLS_signature1 = c("Ccl2","Ccl3","Ccl4","Ccl5","Ccl8","Ccl18",
                      "Ccl19","Ccl21","Cxcl9","Cxcl10","Cxcl11",
