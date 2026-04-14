@@ -5,12 +5,11 @@ library(patchwork)
 library(readxl)
 library(ggplot2)
 
-# Load the metadata file and extract the mapping between sample ID and file name
+# Expression matrix construction and quality control
 json_data <- fromJSON("metadata.cart.2025-11-10.json")
 sample_id <- sapply(json_data$associated_entities,function(x){x[,1]})
 file_sample <- data.frame(sample_id,file_name=json_data$file_name)
 
-# Expression matrix construction and quality control
 count_file <- list.files("gdc_download_20251110_095245.136296/",pattern = "*.tsv",recursive = T)
 count_files_name <- strsplit(count_file,split = '/')
 count_file_name <- sapply(count_file_name,function(x){x[2]})
@@ -49,9 +48,7 @@ expr.matrix <- as.data.frame(expr.matrix)
 filtered_expr_matrix <- expr.matrix[rowSums(expr.matrix < 0.01) < ncol(expr.matrix) * 0.05, ] #Logic: Keep genes expressed (>= 0.01) in at least 5% of the total cohort
 expr=filtered_expr_matrix
 
-
-# Fig. 1c
-# TLS sigantures
+# Spearman correlation analysis of target gene expression (RORC and LTB) with three TLS signature scores (Fig. 1c)
 Sig1 <- c("CCL2","CCL3","CCL4","CCL5","CCL8","CCL18",
           "CCL19","CCL21","CXCL9","CXCL10","CXCL11","CXCL13")
 
@@ -65,7 +62,7 @@ Sig3 <- c("CD79A","CD79B","TNFRSF13C","BLK","CD22","CD37",
           "RASGRP2","TCF7","RIPOR2","RAC2","IL16",
           "CCR7","CD52","TCL1A","ATP2A3")
 
-# Correlation analysis (Spearman)
+# 
 calculate_gene_correlations_fast <- function(signature_genes, expr_matrix) {
   available_genes <- signature_genes[signature_genes %in% rownames(expr_matrix)]
   if (length(available_genes) == 0) return(NULL)
