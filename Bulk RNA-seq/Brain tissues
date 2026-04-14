@@ -1,1 +1,427 @@
+#
+library(dplyr)
+library(data.table)
+library(limma)
+library(ggplot2)
+library(pheatmap)
+library(tidyverse)
+library(readxl)
+library(ggrepel)
+library(ggforce)
+library(VennDiagram)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+library(GSVA)
+library(ggpubr)
+library(tidyr)
+library(enrichplot)
+#
+data <- read_excel("gene expression.xlsx", col_names = TRUE) %>% column_to_rownames(var = "GeneSymbol")
+fpkm_to_tpm <- function(fpkm) {return(exp(log(fpkm) - log(sum(fpkm)) + log(1e6)))}
+tpms <- apply(data, 2, fpkm_to_tpm)
+
+expr.TPM=normalizeBetweenArrays(tpms)
+expr.TPM=log2(expr.TPM+1)
+expr.TPM=as.data.frame(expr.TPM)
+expr.TPM=filter(expr.TPM,rowMeans(expr.TPM[,1:4])>1|rowMeans(expr.TPM[,5:8])>1|rowMeans(expr.TPM[,9:12])>1|rowMeans(expr.TPM[,13:16])>1)
+
+# 
+samples <- colnames(expr.TPM)
+groups <- c(rep("C", 4), rep("M", 4), rep("R", 4), rep("RM", 4))
+groups <- factor(groups, levels = c("C", "M", "R", "RM"))
+
+# Fig. 4b
+# PCA
+expr_scaled <- t(expr.TPM)
+gene_var <- apply(expr_scaled, 2, var)
+constant_genes <- sum(gene_var == 0)
+if(constant_genes > 0) {
+  expr_filtered <- expr_scaled[, gene_var > 0]
+  cat("Removed", constant_genes, "constant genes")
+} else {
+  expr_filtered <-expr_scaled
+}
+expr_scaled <- scale(expr_filtered)
+
+pca_result <- prcomp(expr_scaled, center = FALSE, scale. = FALSE)
+variance_explained <- (pca_result$sdev^2 / sum(pca_result$sdev^2)) * 100
+pca_scores <- as.data.frame(pca_result$x)
+pca_scores$Group <- groups
+pca_scores$Sample <- samples
+
+plot_PCA <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = Group, label = Sample)) +
+  geom_point(size = 4) +
+  geom_mark_ellipse(
+    aes(fill = Group,color=Group),
+    alpha = 0.05,  # 填充透明度
+    expand = unit(1, "mm"),  # 椭圆扩展范围
+    show.legend = FALSE  # 避免图例重复
+  ) +
+  theme_bw() +theme(panel.grid = element_blank()) +
+  labs(title = "PCA Plot",
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  scale_color_manual(values = c("C" = "grey40","M" = "darkorange4", "R" = "dodgerblue4", "RM" = "palegreen4"))+
+  scale_fill_manual(values = c("C" = "grey40","M" = "darkorange4", "R" = "dodgerblue4", "RM" = "palegreen4"))+
+  xlim(-170, 190) + 
+  ylim(-70, 130)
+
+# Fig. S4a
+#C vs M
+CM=samples[groups %in% c("M", "C")]
+CM_expr <- expr.TPM[, CM]
+CM_groups <- groups[groups %in% c("M", "C")]
+CM_groups <- factor(CM_groups)
+CM_groups <- relevel(CM_groups, ref = "C")
+CM_design <- model.matrix(~CM_groups)
+colnames(CM_design) <- levels(CM_groups)
+rownames(CM_design) <- colnames(CM_expr)
+
+CM_fit <- lmFit(CM_expr, CM_design)
+CM_fit <- eBayes(CM_fit)
+CM_Dif <- topTable(CM_fit, coef = 2, adjust = "fdr", number = Inf)
+
+CM_Dif$significant <- "stable"
+CM_Dif$significant[CM_Dif$logFC >= log2(1.5) & CM_Dif$P.Value < 0.05] <- "up"
+CM_Dif$significant[CM_Dif$logFC <= (-log2(1.5)) & CM_Dif$P.Value < 0.05] <- "down"
+sum(CM_Dif$significant=="down")
+
+p_CM=ggplot(CM_Dif,aes(logFC,-1*log10(P.Value)))+
+  xlim(-3,3)+ylim(0,5)+geom_point(aes(color=significant),size=1.5)+
+  theme_classic()+scale_color_manual(values = c("black","grey","darkorange4"))+
+  geom_hline(yintercept = -1*log10(0.05),linetype=4,linewidth=1)+
+  geom_vline(xintercept = c(-log2(1.5),log2(1.5)),linetype=4,size=1)+
+  annotate("text",x=2,y=4,label="(234)",colour="darkorange4")+
+  annotate("text",x=-2,y=4,label="(357)",colour="black")
+
+#C vs R
+CR=samples[groups %in% c("R", "C")]
+CR_expr <- expr.TPM[, CR]
+CR_groups <- groups[groups %in% c("R", "C")]
+CR_groups <- factor(CR_groups)
+CR_groups <- relevel(CR_groups, ref = "C")
+CR_design <- model.matrix(~CR_groups)
+colnames(CR_design) <- levels(CR_groups)
+rownames(CR_design) <- colnames(CR_expr)
+
+CR_fit <- lmFit(CR_expr, CR_design)
+CR_fit <- eBayes(CR_fit)
+CR_Dif <- topTable(CR_fit, coef = 2, adjust = "fdr", number = Inf)
+
+CR_Dif$significant <- "stable"
+CR_Dif$significant[CR_Dif$logFC >= log2(1.5) & CR_Dif$ue < 0.05] <- "up"
+CR_Dif$significant[CR_Dif$logFC <= (-log2(1.5)) & CR_Dif$P.Value < 0.05] <- "down"
+sum(CR_Dif$significant=="down")
+
+p_CR=ggplot(CR_Dif,aes(logFC,-1*log10(P.Value)))+
+  xlim(-3,3)+ylim(0,5)+geom_point(aes(color=significant),size=1.5)+
+  theme_classic()+scale_color_manual(values = c("black","grey","dodgerblue4"))+
+  geom_hline(yintercept = -1*log10(0.05),linetype=4,linewidth=1)+
+  geom_vline(xintercept = c(-log2(1.5),log2(1.5)),linetype=4,size=1)+
+  annotate("text",x=2,y=4,label="(496)",colour="dodgerblue4")+
+  annotate("text",x=-2,y=4,label="(314)",colour="black")
+
+#C vs RM
+CRM=samples[groups %in% c("RM", "C")]
+CRM_expr <- expr.TPM[, CRM]
+CRM_groups <- groups[groups %in% c("RM", "C")]
+CRM_groups <- factor(CRM_groups)
+CRM_groups <- relevel(CRM_groups, ref = "C")
+CRM_design <- model.matrix(~CRM_groups)
+colnames(CRM_design) <- levels(CRM_groups)
+rownames(CRM_design) <- colnames(CRM_expr)
+
+CRM_fit <- lmFit(CRM_expr, CRM_design)
+CRM_fit <- eBayes(CRM_fit)
+
+# 获取差异表达结果
+CRM_Dif <- topTable(CRM_fit, coef = 2, adjust = "fdr", number = Inf)
+
+# 添加显著性标记
+CRM_Dif$significant <- "stable"
+CRM_Dif$significant[CRM_Dif$logFC >= log2(1.5) & CRM_Dif$P.Value < 0.05] <- "up"
+CRM_Dif$significant[CRM_Dif$logFC <= (-log2(1.5)) & CRM_Dif$P.Value < 0.05] <- "down"
+sum(CRM_Dif$significant=="down")
+
+p_CRM=ggplot(CRM_Dif,aes(logFC,-1*log10(P.Value)))+
+  xlim(-3,3)+ylim(0,5)+geom_point(aes(color=significant),size=1.5)+
+  theme_classic()+scale_color_manual(values = c("black","grey","palegreen4"))+
+  geom_hline(yintercept = -1*log10(0.05),linetype=4,linewidth=1)+
+  geom_vline(xintercept = c(-log2(1.5),log2(1.5)),linetype=4,size=1)+
+  annotate("text",x=2,y=4,label="(695)",colour="palegreen4")+
+  annotate("text",x=-2,y=4,label="(415)",colour="black")
+
+#Fig. 4c
+# 提取上调基因
+up_CM <- rownames(CM_Dif)[CM_Dif$significant == "up"]
+up_CR <- rownames(CR_Dif)[CR_Dif$significant == "up"]
+up_CRM <- rownames(CRM_Dif)[CRM_Dif$significant == "up"]
+
+# 提取下调基因
+down_CM <- rownames(CM_Dif)[CM_Dif$significant == "down"]
+down_CR <- rownames(CR_Dif)[CR_Dif$significant == "down"]
+down_CRM <- rownames(CRM_Dif)[CRM_Dif$significant == "down"]
+
+venn_up <- venn.diagram(
+  x = list(
+    CM = up_CM,
+    CR = up_CR, 
+    CRM = up_CRM
+  ),
+  filename = NULL,  # 不直接保存到文件
+  fill = c( "darkorange4", "dodgerblue4", "palegreen4"),  # 设置颜色
+  alpha = 0.2,
+  cat.cex = 1.2,
+  cat.col = c( "darkorange4", "dodgerblue4", "palegreen4"),
+  main = "Up-regulated Genes Venn Diagram",
+  main.cex = 1.5,
+  cex = 1.2
+)
+grid.draw(venn_up)
+
+# 绘制下调基因韦恩图
+venn_down <- venn.diagram(
+  x = list(
+    CM = down_CM,
+    CR = down_CR,
+    CRM = down_CRM
+  ),
+  filename = NULL,
+  fill = c("darkorange4", "dodgerblue4", "palegreen4"),
+  alpha = 0.2,
+  cat.cex = 1.2,
+  cat.col = c("darkorange4", "dodgerblue4", "palegreen4"),
+  main = "Down-regulated Genes Venn Diagram", 
+  main.cex = 1.5,
+  cex = 1.2
+)
+grid.draw(venn_down)
+
+#GO富集分析
+up_CRM.BP = enrichGO(gene = up_CRM,
+                     OrgDb = org.Mm.eg.db,
+                     keyType = "SYMBOL",
+                     ont = "ALL",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.05) 
+
+selected.up_CRM=up_CRM.BP@result[c("GO:0046651",
+                                   "GO:0050870",
+                                   "GO:0050900",
+                                   "GO:0001906",
+                                   "GO:0060326",
+                                   "GO:0002456",
+                                   "GO:0042113",
+                                   "GO:0019724",
+                                   "GO:0032640",
+                                   "GO:0032609"),]
+
+ggplot(selected.up_CRM,
+       aes(RichFactor,fct_reorder(factor(Description),RichFactor),fill=pvalue))+
+  geom_bar(stat="identity",width = 0.8)+
+  scale_fill_gradient(low = "darkgreen",high = "#B0CBA8")+
+  labs(x="RichFactor",y="GO term",title="GO enrichment of up_CRM regulated genes")+
+  theme_classic()
+
+down_CRM.BP = enrichGO(gene = down_CRM,
+                     OrgDb = org.Mm.eg.db,
+                     keyType = "SYMBOL",
+                     ont = "ALL",
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.05) 
+
+selected.down_CRM=down_CRM.BP@result[c("GO:0006658",
+                                       "GO:0090596",
+                                       "GO:0060349",
+                                       "GO:0060040",
+                                       "GO:0000132",
+                                       "GO:0000768",
+                                       "GO:0140253",
+                                       "GO:0062023",
+                                       "GO:0098985",
+                                       "GO:0005581"),]
+
+ggplot(selected.down_CRM,
+       aes(RichFactor,fct_reorder(factor(Description),RichFactor),fill=pvalue))+
+  geom_bar(stat="identity",width = 0.8)+
+  scale_fill_gradient(low = "darkorange4",high = "#B9a98d")+
+  labs(x="RichFactor",y="GO term",title="GO enrichment of up_CRM regulated genes")+
+  theme_classic()
+
+#
+group_levels <- levels(groups)
+expr.TPM.mean <- sapply(group_levels, function(grp) {
+  rowMeans(expr.TPM[, groups == grp, drop = FALSE])
+})
+
+Immune_cell_markers=expr.TPM.mean[c("Cd3d","Cd3e","Cd3g","Trac","Trbv3","Trbv13-2",
+                               "Trbv13-3","Trbv15","Trbj1-3","Trbc1","Trbc2",
+                               "Cd4","Cd8a","Cd8b1","Cd28","Icos","Ctla4",
+                               "Tnfrsf9","Pdcd1","Tigit","Cd2","Ly9","Cd96",
+                               "Cd180","Cd209a","Cd79a","Cd79b","Cd40","Cd5",
+                               "Nkg7","Klrc1",
+                               "Adgre1","Clec10a","Clec4d","Clec4a3","Clec4a1",
+                               "Clec12a","Clec2i","Cd164l2","Ly6c2","Ly6i","Ly6d",
+                               "Ly6g6f","Ly6g5b","Ly6a2","Slamf7","Slamf8","Tarm1",
+                               "Anpep","Cd6"),]
+Immune_cell_markers=as.matrix(Immune_cell_markers)
+p_Immune_cell_markers <- pheatmap(Immune_cell_markers,
+                     name = "Immune_cell_markers", 
+                     scale = "row", 
+                     color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                     show_rownames = TRUE,
+                     cluster_rows = FALSE,
+                     cluster_cols = FALSE,
+                     cellwidth =20,
+                     cellheight =8)
+#########
+Immune_effector_molecules=expr.TPM.mean[c("Ccl3","Ccl5","Ccl6","Ccl8","Ccl19","Ccl22",
+                                    "Cxcl5","Cxcl13","Cxcl16","Ccr2","Ccr7",
+                                    "Cxcr3","Cxcr6","Ifng","Il12b","Il33","Ltb","Il1rn",
+                                    "Il2ra","Il2rb","Il2rg","Il3ra","Il7r","Il10ra","Il18r1",
+                                    "Il21r","Csf3r","Prf1","Gzmk","Fasl","Ighm",
+                                    "Ighg1","Ighg3","Ighv1-50","Ighv1-42","Ighv1-39",
+                                    "Ighv1-85","Ighd","Igkv4-79","Igkv8-30","Igkv1-110",
+                                    "Igkv1-117","Igkv6-25","Igkv1-135","Igkv4-55",
+                                    "Iglv3","Iglv2","Iglc3",
+                                    "C3","Serping1","Serpind1","Serpinb6b","Serpinb1a",
+                                    "Serpinb1b","Arg1","Nos2","Ido1",
+                                    "Pglyrp2","Cpa3","Cma1","Mcpt1","Mcpt2","Mcpt4"),]
+Immune_effector_molecules=as.matrix(Immune_effector_molecules)
+p_Immune_effector_molecules <- pheatmap(Immune_effector_molecules,
+                                  name = "Immune_effector_molecules", 
+                                  scale = "row", 
+                                  color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                                  show_rownames = TRUE,
+                                  cluster_rows = FALSE,
+                                  cluster_cols = FALSE,
+                                  cellwidth =20,
+                                  cellheight =8)
+#####
+Immune_Signaling_Regulation=expr.TPM.mean[c("H2-Aa","H2-Eb1","H2-DMb2",
+                                          "H2-Oa","H2-Ob","H2-M2","H2-Q5",
+                                          "H2-Q7","H2bc4","H2bc6","H2bc15",
+                                          "Ctsd","Ctss","Ctsh","Ctsw","Ctsc","Ifi209",
+                                          "Zap70","Itk","Btk","Was","Lat2","Grap",
+                                          "Sash3","Vav1","Rac2","Plcg2","Rasgrp2",
+                                          "Ptpn22","Ptpn7","Dok2","Dok3","Fyb",
+                                          "Cytip","Traf1","Prkcq","Themis",
+                                          "Themis2","Stk26","Arhgdib","Arhgap4",
+                                          "Arhgap45","Foxp3","Ikzf3","Irf8","Maf",
+                                          "Nr1h3","Rxrg"),]
+Immune_Signaling_Regulation=as.matrix(Immune_Signaling_Regulation)
+p_Immune_Signaling_Regulation <- pheatmap(Immune_Signaling_Regulation,
+                                        name = "Immune_Signaling_Regulation", 
+                                        scale = "row", 
+                                        color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                                        show_rownames = TRUE,
+                                        cluster_rows = FALSE,
+                                        cluster_cols = FALSE,
+                                        cellwidth =20,
+                                        cellheight =8)
+####
+Cell_Adhesion_Migration=expr.TPM.mean[c("Itgb2","Itgb7","Itgae","Itgam",
+                                        "Itgal","Icam1","Icam2","Sell",
+                                        "Bcam","Selplg","Cd226","Vav1",
+                                        "Rac2","Plcg2"),]
+Cell_Adhesion_Migration=as.matrix(Cell_Adhesion_Migration)
+p_Cell_Adhesion_Migration <- pheatmap(Cell_Adhesion_Migration,
+                                          name = "Cell_Adhesion_Migration", 
+                                          scale = "row", 
+                                          color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                                          show_rownames = TRUE,
+                                          cluster_rows = FALSE,
+                                          cluster_cols = FALSE,
+                                          cellwidth =20,
+                                          cellheight =8)
+
+
+exhaustion=expr.TPM.mean[c("Pdcd1","Cd274","Pdcd1lg2","Havcr2",
+                           "Lag3","Ctla4","Tigit"),]
+exhaustion=as.matrix(exhaustion)
+p_exhaustion <- pheatmap(exhaustion,
+                                          name = "exhaustion", 
+                                          scale = "row", 
+                                          color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                                          show_rownames = TRUE,
+                                          cluster_rows = FALSE,
+                                          cluster_cols = FALSE,
+                                          cellwidth =20,
+                                          cellheight =8)
+####下调基因
+Protumorigenic_molecules=expr.TPM.mean[c("H19","Met","Macc1","Etv4","E2f7",
+                                        "Ccn1","Cthrc1","Mmp16","Frat2",
+                                        "Vash2","Trib3"),]
+Protumorigenic_molecules=as.matrix(Protumorigenic_molecules)
+p_Protumorigenic_molecules <- pheatmap(Protumorigenic_molecules,
+                                      name = "Pro-tumorigenic_molecules", 
+                                      scale = "row", 
+                                      color = colorRampPalette(c("darkorange4","floralwhite", "darkgreen"))(100),
+                                      show_rownames = TRUE,
+                                      cluster_rows = FALSE,
+                                      cluster_cols = FALSE,
+                                      cellwidth =20,
+                                      cellheight =8)
+####
+#GSEA
+FC.Dif_ID <- merge(CRM_Dif,Dif_ID,by.x=0, by.y=1)
+FC.Dif_ID <- FC.Dif_ID[order(FC.Dif_ID$logFC, decreasing = T),]
+genelist <- FC.Dif_ID$logFC
+names(genelist) <- FC.Dif_ID$ENTREZID
+
+gsea <- gseKEGG(genelist, organism = "mmu",pvalueCutoff = 0.05)
+gsea_Th17 <- gseaplot2(gsea,geneSetID = "mmu04659",pvalue_table = T)
+
+#######TLSs score的样本打分
+# 基因集
+gene_signatures <- list(
+  TLS_signature1 = c("Ccl2","Ccl3","Ccl4","Ccl5","Ccl8","Ccl18",
+                     "Ccl19","Ccl21","Cxcl9","Cxcl10","Cxcl11",
+                     "Cxcl3"),
+  TLS_signature2 = c("Ccl19","Ccl21","Cxcl13","Ccr7","Sell",
+                     "Lamp3","Cxcr4","Cd86","Bcl6"),
+  TLS_signature3 = c("Cd79a","Cd79b","Tnfrsf13c","Blk","Cd22",
+                     "Cd37","Ms4a1","Niban3","Cd19","Ikzf3",
+                     "Linc00926","Cxcr5","Ltb","Sell","Ccl19",
+                     "Pou2af1","Cxcl13","Fcrla","Vpreb3","Fcmr",
+                     "Al928768.3","Rasgrp2","Tcf7","Ripor2",
+                     "Rac2","Il16","Ccr7","Cd52","Tcl1a","Atp2a3")
+)
+
+# 检查基因签名中的基因在表达矩阵中的存在情况
+expr_matrix <- as.matrix(expr.TPM)
+check_gene_coverage <- function(expr_matrix, gene_sets) {
+  for (set_name in names(gene_sets)) {
+    genes_in_set <- gene_sets[[set_name]]
+    genes_in_matrix <- genes_in_set[genes_in_set %in% rownames(expr_matrix)]
+    coverage <- length(genes_in_matrix) / length(genes_in_set)
+    cat(paste0("Signature '", set_name, "': ", 
+               length(genes_in_matrix), "/", length(genes_in_set),
+               " genes found (", round(coverage * 100, 1), "%)\n"))
+  }
+}
+
+check_gene_coverage(expr.TPM, gene_signatures)
+
+# 进行ssGSEA分析，GSVA
+
+gsvaPar <- ssgseaParam(exprData=expr_matrix,
+                      geneSets=gene_signatures,
+                      normalize = TRUE)
+gsva_data=gsva(gsvaPar,verbose=F)
+gsva_data=as.data.frame(t(gsva_data))
+gsva_data$Group <- factor(groups, levels = c("C", "M", "R", "RM")) 
+
+gsva_long <- gsva_data %>%
+  rownames_to_column("Sample") %>%
+  pivot_longer(cols = -c(Sample, Group), names_to = "Signature", values_to = "Score")
+
+ggplot(gsva_long, aes(x = Group, y = Score, fill = Group)) +
+  stat_boxplot(geom = "errorbar", width = 0.2, color = "black")+
+  geom_boxplot(width = 0.5, outlier.shape = NA, color = "black", fill = NA) +  
+  geom_jitter(aes(color = Group), width = 0.15, size = 5, alpha = 0.6)+
+  coord_cartesian(ylim = c(-0.6, 0.6)) +
+  facet_wrap(~Signature, scales = "free_y") +  
+  theme_classic()+
+  scale_color_manual(values = c("grey","darkorange4", "dodgerblue4", "palegreen4"))
 
