@@ -8,7 +8,7 @@ library(pheatmap)
 library(ggrepel)
 
 # Annotations and clustering of CD4+ T cells
-scRNA.harmony <- readRDS("scRNA.harmony.rds")
+scRNA.harmony <- readRDS("scRNA.harmony.rds") # Derived from scRNA-seq 2.All cells
 Idents(scRNA.harmony) <- "celltype"
 CD4 <- subset(scRNA.harmony, idents = "CD4+ T")
 CD4 <- NormalizeData(CD4) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
