@@ -5,7 +5,14 @@ library(ggalluvial)
 library(ggsci)
 library(pheatmap)
 library(ggrepel)
-
+library(remotes)
+library(monocle3)
+library(Seurat)
+library(SeuratWrappers) 
+library(magrittr)
+library(monocle)
+library(igraph)
+library(ComplexHeatmap)
 # Annotations and clustering of CD8+ T cells
 scRNA.harmony <- readRDS("scRNA.harmony.rds")
 Idents(scRNA.harmony) <- "celltype"
@@ -23,9 +30,255 @@ markers <- FindAllMarkers(object = CD8, test.use = "wilcox",
 all.markers <- markers %>% dplyr::select(gene,everything()) %>%subset(p_val<0.05)
 top30 <- all.markers %>% group_by(cluster) %>% top_n(n=30,wt=avg_log2FC)
 
-CD4_ID <- c("4"="ISG T","6"="ISG T","13"="ISG T",
+Idents(CD8) <- "seurat_clusters"
+CD8_ID <- c("4"="ISG T","6"="ISG T","13"="ISG T",
             "11"="Tn","14"="NK-like T","5"="Temra",
             "10"="Temra","7"="Early Tem","0"="Tem"
             "9"="Tex-term", "2"="Tex-int", "8"="Tex-res",
             "16"="Tex-stem","15"="Cycling T","1"="Trm",
              "3"="Trm","17"="Early Tem","12"="Tex-res")
+
+CD8 <- RenameIdents(CD8, CD8_ID)
+CD8$celltype <- Idents(CD8)
+target_order <- c("Tn", "Temra","Early Tem", "Tem","Tex-stem", "Tex","Tex-term",
+                  "Tex-res","Trm","NK-like T","ISG T","Cycling T")
+Idents(CD8)="celltype"
+Idents(CD8) <- factor(Idents(CD8), levels = target_order)
+CD8$celltype <- factor(CD8$celltype, levels = target_order)
+
+# UMAP plot of CD8+ T cells showing identified clusters (Fig. 7a) ###################################################################
+cell_color <- c( "#3AB7BC", "#2672A7","#ACD286", "#659E33", "#D3221E", "#C5AED0",
+              "#D43080", "#633A8F", "#CD5D14", "#A2C7DB","#F3B970","#F09493")
+DimPlot(CD8, reduction = "umap", pt.size = 0.5,cols=cell_color)
+
+# Dot plot showing the expression of canonical marker genes across clusters (Fig. 7b) ###############################################
+marker_gene <- c("Ccr7","Sell","Slamf6", "Tcf7", "Il7r", "S1pr1", 
+              "Cx3cr1","Klrg1","Zeb2","Cxcr4","Cd44","Cd27","Gzmk",
+              "Pdcd1","Havcr2","Lag3","Entpd1","Tox",
+              "Ifng","Prf1","Gzma","Gzmb","Itgae","Itga1","Cxcr6",
+              "Klrc1","Klrd1","Klra1","Eomes","Ifit1","Stat1","Isg15","Mki67", "Top2a")
+
+plot_marker <- DotPlot(CD8, features = marker_gene, group.by = "celltype", dot.scale = 5) + 
+                       RotatedAxis() + 
+                       scale_colour_gradient2(low = "blue4", mid = "cornsilk", high = "red3") + 
+                       scale_y_discrete(limits = rev(target_order)) +
+                       labs(title = "CD8+ T Subsets Marker Expression", x = "Genes", y = "Cell Types")
+
+# Violin plot demonstrating exhaustion, effector function, and Stemness signatures across CD8+ T cell clusters (Fig. 7c) #############
+features_list <- list(
+  Exhaustion = c("Pdcd1", "Tox", "Cxcl13", "Tigit", "Ctla4", "Tnfrsf9", "Havcr2", "Lag3"),
+  Effector = c("Cst7", "Gzmk", "Gzma", "Nkg7", "Ifng", "Prf1", "Gzmb", "Gnly"),
+  Stemness = c("Btla", "Foxp3", "Tnfrsf4", "Tcf7", "Eef1a1", "Sell", "Ccr7", "Il6r", "Igfbp4", "Igfl2"))
+
+for(name in names(features_list)){
+  genes <- features_list[[name]]
+  genes_in_data <- genes[genes %in% rownames(CD8)]
+  CD8 <- AddModuleScore(
+    object = CD8,
+    features = list(genes_in_data),
+    ctrl = 50,
+    name = paste0(name, "_Score"))}
+
+score_names <- c("Exhaustion_Score1", "Effector_Score1", "Stemness_Score1")
+plot_titles <- c("Exhaustion Score", "Effector Score", "Stemness Score")
+ordered_plots <- list()
+for(i in 1:length(score_names)){
+  p <- VlnPlot(CD8, features = score_names[i], 
+               pt.size = 0,
+               cols = cell_color) + 
+    geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) + 
+    labs(title = plot_titles[i]) +
+    theme_classic() 
+  ordered_plots[[i]] <- p}
+wrap_plots(ordered_plots, ncol = 3)
+
+# UMAP density plot of the four treatment groups (Fig. 7d) ##########################################################################
+plot_data <- FetchData(CD8, vars = c("UMAP_1", "UMAP_2", "orig.ident"))
+plot_density <- ggplot(plot_data, aes(x = UMAP_1, y = UMAP_2))  +
+                     geom_point(color = "grey90", size = 0.1, alpha = 0.1) +
+                                stat_density_2d(aes(fill = after_stat(nlevel)), 
+                                geom = "polygon", 
+                                bins = 10, 
+                                n = 200) +
+                     geom_density_2d(color = "black", 
+                                     linewidth = 0.2, 
+                                     bins = 10, 
+                                     alpha = 0.8) +
+                     scale_fill_gradientn(colours = c("white", "grey90", "red3"), 
+                                          values = c(0, 0.2,1)) +
+                     facet_wrap(~orig.ident) +
+                     theme_void()
+
+# Distribution of cell cluster Proportions in the four treatment groups (Fig. 7e) ####################################################
+cell_counts <- CD8@meta.data %>%
+              group_by(orig.ident, celltype) %>%
+              summarise(count = n()) %>%
+              group_by(orig.ident) %>%
+              mutate(percentage = count / sum(count) * 100)
+              target_sample_order <- c("C", "MP", "RM", "RMP")
+
+plot_proportion <- ggplot(cell_counts, aes(x = orig.ident, y = percentage, fill = celltype)) +
+                   geom_bar(stat = "identity", position = "stack", width = 0.7) +
+                   scale_fill_manual(values = cell_color) + 
+                   labs(x = "Sample", y = "Percentage (%)", fill = "Cluster") +
+                   theme_classic() + 
+                   theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+                   scale_x_discrete(limits = target_sample_order)
+
+# Pseudotime trajectory of CD8+ T Cell Differentiation via Monocle3 (Fig. S7d) #####################################################
+expression_matrix <- GetAssayData(CD8, assay = "RNA", slot = "counts")
+cell_metadata <- CD8@meta.data
+gene_annotation <- data.frame(gene_short_name = rownames(expression_matrix), row.names = rownames(expression_matrix))
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+reducedDims(cds)[["UMAP"]] <- Embeddings(CD8, reduction = "umap")
+cds@clusters$UMAP$partitions <- factor(rep(1, ncol(cds)), levels = 1)
+names(cds@clusters$UMAP$partitions) <- colnames(cds)
+cds@clusters$UMAP$clusters <- Idents(CD8)
+
+cds_CD8 <- learn_graph(cds, 
+                    use_partition = TRUE, 
+                    close_loop = FALSE,
+                    learn_graph_control = list(euclidean_distance_ratio = 5,
+                                               geodesic_distance_ratio = 5))
+
+plot_cells(cds_CD8, color_cells_by = "celltype", label_groups_by_cluster = FALSE,
+           label_leaves = FALSE, label_branch_points = TRUE)
+root_cells <- colnames(cds[, clusters(cds) == "Tn"]))
+cds_CD8 <- order_cells(cds_CD8, root_cells = root_cells)
+
+p_celltype=plot_cells(cds_CD8, 
+           color_cells_by = "celltype", 
+           label_cell_groups = F, 
+           label_leaves = F, 
+           label_branch_points = F,
+           graph_label_size = 0,
+           cell_stroke = 0)+
+  scale_color_manual(values = cell_color)
+
+p_pseudotime=plot_cells(cds_CD8, 
+           color_cells_by = "pseudotime", 
+           label_cell_groups = F, 
+           label_leaves = F, 
+           label_branch_points = F,
+           graph_label_size = 0,
+           cell_stroke = 0)
+
+# Pseudotime trajectory of Tex Differentiation via Monocle2 (Fig. 7f) ##############################################################
+Idents(CD8) <- "celltype"
+CD8_tex <- subset(CD8, idents = c("Tex-stem", "Tex-int", "Tex-term", "Tex-res"))
+
+data <- as(as.matrix(CD8_tex@assays$RNA@counts), 'sparseMatrix')
+pd <- new('AnnotatedDataFrame', data = CD8_tex@meta.data)
+fData <- data.frame(gene_short_name = row.names(data), row.names = row.names(data))
+fd <- new('AnnotatedDataFrame', data = fData)
+
+cds_m2 <- newCellDataSet(data, phenoData = pd, featureData = fd, 
+                         expressionFamily = negbinomial.size())
+
+cds_m2 <- estimateSizeFactors(cds_m2)
+cds_m2 <- estimateDispersions(cds_m2)  
+diff_test_res <- differentialGeneTest(cds_m2, 
+                                      fullModelFormulaStr = "~celltype", 
+                                      cores = 4) 
+
+ordering_genes <- row.names(subset(diff_test_res, qval < 0.01))
+cds_m2 <- setOrderingFilter(cds_m2, ordering_genes)
+cds_m2 <- reduceDimension(cds_m2, max_components = 2, method = 'DDRTree')
+cds_m2 <- orderCells(cds_m2,root_state = 2)
+
+color=c( "#D3221E", "#C5AED0","#D43080", "#633A8F")
+p_celltype_Tex=plot_cell_trajectory(cds_m2, color_by = "celltype", cell_size = 1) +
+  scale_color_manual(values = color) 
+p_pseudotime_Tex=plot_cell_trajectory(cds_m2, color_by = "Pseudotime", cell_size = 1)+
+  scale_color_viridis_c(option = "magma")
+
+# Dynamic expression of genes along Tex differentiation pseudotime trajectory (Fig. 7g) ############################################
+gene_groups <- list(
+  Stemness = c("Ccr7", "Tcf7", "Sell"),
+  Effector = c("Gzma", "Gzmb", "Prf1","Ltb"),
+  Exhaustion = c("Pdcd1","Entpd1","Tigit"),
+  Resident = c("Zfp683", "Itgae", "Itga1"))
+
+all_target_genes <- unlist(gene_groups)
+
+new_data <- data.frame(Pseudotime = seq(0, max(pData(cds_m2)$Pseudotime), length.out = 100))
+curve_data <- genSmoothCurves(cds_m2[all_target_genes, ], 
+                              new_data = new_data, 
+                              cores = 1)
+
+normalize_01 <- function(x) { 
+  if(max(x) - min(x) == 0) return(x)
+  (x - min(x)) / (max(x) - min(x)) 
+}
+curve_data_norm <- t(apply(curve_data, 1, normalize_01))
+
+plot_df <- as.data.frame(t(curve_data_norm))
+plot_df$Pseudotime <- new_data$Pseudotime
+plot_data_long <- pivot_longer(plot_df, 
+                               cols = -Pseudotime, 
+                               names_to = "Gene", 
+                               values_to = "Normalized_Expression")
+
+group_map <- data.frame(
+  Gene = unlist(gene_groups),
+  Group = rep(names(gene_groups), times = sapply(gene_groups, length))
+)
+plot_data_long <- merge(plot_data_long, group_map, by = "Gene")
+plot_data_long$Group <- factor(plot_data_long$Group, levels = names(gene_groups))
+
+ggplot(plot_data_long, aes(x = Pseudotime, y = Normalized_Expression, color = Gene)) +
+  geom_line(size = 1.2, alpha = 0.8) +
+  facet_wrap(~Group, ncol = 2) + 
+  scale_color_viridis_d(option = "turbo") + 
+  labs(x = "Pseudotime (Stem-like -> Tex)", 
+       y = "Normalized Expression (0-1)") +
+  theme_classic() +
+  theme(panel.grid = element_blank(),
+        strip.background = element_blank(), 
+        strip.text = element_text(size = 14, face = "bold"),
+        axis.text = element_text(color = "black"),
+        legend.text = element_text(size = 8)) 
+
+# Heatmap showing the differentially expressed genes in R@MP group compared to the control (Fig. S7e) ################################
+Idents(CD8) <- "orig.ident"
+deg <- FindMarkers(
+  object = CD8, 
+  ident.1 = "RMP", 
+  ident.2 = "C", 
+  logfc.threshold = 0,   
+  min.pct = 0.01         
+)
+deg$gene <- rownames(deg)
+deg$change <- "Stable"
+
+deg$change[deg$avg_log2FC > log2(1.2) &deg$p_val < 0.05] <- "Up"
+degs$change[deg$avg_log2FC < -log2(1.2) & deg$p_val < 0.05] <- "Down"
+up_count <- sum(deg$change == "Up")
+down_count <- sum(deg$change == "Down")
+up <- deg %>% filter(change == "Up")
+down <- deg %>% filter(change == "Down") 
+plot_genes <- c(up$gene, down$gene)
+
+avg_exp <- AverageExpression(CD8, 
+                             group.by = "orig.ident", 
+                             features = plot_genes, 
+                             slot = "data") %>% as.data.frame()
+all_avg_matrix <- as.matrix(avg_exp[[1]])
+target_cols <- c("C.RNA", "MP.RNA", "RM.RNA", "RMP.RNA")
+avg_exp <- avg_exp[, c("RNA.C", "RNA.MP", "RNA.RM", "RNA.RMP")]
+scaled_matrix <- t(scale(t(avg_exp)))
+
+Heatmap(scaled_matrix,  
+        col = colorRamp2(c(-2, 0, 2), c("blue4", "cornsilk", "red3")),
+        cluster_rows = TRUE,       
+        cluster_columns = F,    
+        show_row_names = TRUE, 
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 12, fontface = "bold"),
+        column_title = "Average Expression",
+        row_split = factor(c(rep("Up-regulated", nrow(top_up)), 
+                             rep("Down-regulated", nrow(top_down))),
+                           levels = c("Up-regulated", "Down-regulated")))
