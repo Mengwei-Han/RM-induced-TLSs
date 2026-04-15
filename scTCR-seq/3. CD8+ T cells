@@ -1,1 +1,89 @@
+# Load required libraries
+library(Seurat)
+library(tidyverse)
+library(scRepertoire)
+library(ggplot2)
+library(ComplexUpset)
 
+# Integration of scRNA-seq and scTCR-seq data for CD4+ T cells
+CD8 <- readRDS("CD8.rds") # Derived from scRNA-seq 3.CD8+ T cells
+combined_tcr <- readRDS("combined_tcr.rds") # Derived from scTCR-seq 1.Data integration
+CD8.TCR <- combineExpression(combined_tcr,
+                             CD8, 
+                             cloneCall = "strict",
+                             cloneSize = c(Single = 1, Small = 5, Medium = 20, Large = 100, Hyperexpanded = 500),
+                             proportion = FALSE)
+
+# UMAP visualization showing the clonal expansion in CD8+ T cells (Fig. 7h) ########################################################
+size_color=c("#FF007F","#F0F921","#ED7953", "#9C179E","#0C0887")
+DimPlot(CD8.TCR, group.by = "cloneSize",reduction = "umap",cols=size_color)
+
+# UMAP visualization showing the clonal frequency in CD8+ T cells across groups (Fig. 7i) ##########################################
+umap_coords <- as.data.frame(Embeddings(CD8.TCR, reduction = "umap"))
+metadata <- CD8.TCR@meta.data
+plot_df <- cbind(umap_coords, metadata)
+
+ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = clonalProportion)) +
+  geom_point(alpha = 1, size = 1) + 
+  scale_color_gradientn(
+    colors = c("grey90", "red3", "darkred"),
+    values = scales::rescale(c(0, 0.5, 1))
+  ) +
+  facet_wrap(~orig.ident, ncol = 2)+
+  theme_classic() 
+
+plot_df %>%
+  arrange(!is.na(clonalProportion), clonalProportion) %>% 
+  ggplot(aes(x = UMAP_1, y = UMAP_2, color = clonalProportion)) +
+  geom_point(alpha = 1, size = 1)+
+  scale_color_gradientn(
+    colors = c("grey90", "red3", "darkred"),
+    values = scales::rescale(c(0, 0.5, 1))
+  ) +
+  facet_wrap(~orig.ident, ncol = 2) +
+  theme_classic()
+
+# TCR clonotype overlap and expansion within the exhaustion T cells (Fig. 7j) #####################################################
+CD8_tex <- subset(CD8.TCR, idents = c("Tex-stem", "Tex-int", "Tex-term", "Tex-res"))
+
+upset_df <- CD8_tex@meta.data %>%
+  filter(!is.na(CTstrict)) %>%
+  distinct(CTstrict, celltype, .keep_all = TRUE) %>%
+  select(CTstrict, celltype, cloneSize)
+
+upset_matrix <- upset_df %>%
+  mutate(present = 1) %>%
+  pivot_wider(names_from = celltype, values_from = present, values_fill = 0)
+
+my_clusters <- c("Tex-stem", "Tex-int", "Tex-term", "Tex-res")
+upset_matrix$cloneSize <- as.character(upset_matrix$cloneSize)
+levels(upset_matrix$cloneSize)
+table(upset_matrix$cloneSize)
+upset_matrix<- as.data.frame(upset_matrix)
+size_cols <- c("Hyperexpanded (100 < X <= 500)" = "#FF007F", 
+               "Large (20 < X <= 100)" = "#F0F921", 
+               "Medium (5 < X <= 20)"   = "#ED7953", 
+               "Small (1 < X <= 5)"     = "#9C179E",
+               "Single (0 < X <= 1)"   = "#0C0887")
+
+upset_matrix$cloneSize <- factor(upset_matrix$cloneSize, 
+                                 levels = c("Hyperexpanded (100 < X <= 500)","Large (20 < X <= 100)",
+                                            "Medium (5 < X <= 20)","Small (1 < X <= 5)","Single (0 < X <= 1)"))
+
+plot <-upset(
+  upset_matrix,
+  my_clusters,
+  base_annotations = list(
+    'Intersection size' = intersection_size(
+      counts = FALSE,
+      mapping = aes(fill = cloneSize)
+    ) + scale_fill_manual(values = size_cols)+
+      theme(
+        axis.ticks.y = element_line(color = "black"), 
+        axis.ticks.length.y = unit(0.2, "cm")
+      )
+  ),
+  width_ratio = 0.1,
+  sort_sets = FALSE,
+  sort_intersections_by = "degree"
+)
