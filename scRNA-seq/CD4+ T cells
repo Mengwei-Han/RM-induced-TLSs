@@ -140,8 +140,8 @@ for (i in clusters) {
   deg <- FindMarkers(CD4, 
                      ident.1 = "RMP", 
                      ident.2 = "C", 
-                     group.by = "orig.ident", # 指定分组列
-                     subset.ident = i,        # 锁定当前 Cluster
+                     group.by = "orig.ident", 
+                     subset.ident = i,       
                      logfc.threshold = 0, 
                      min.pct = 0.01)
   deg$gene <- rownames(deg)
