@@ -45,6 +45,8 @@ Idents(CD8)="celltype"
 Idents(CD8) <- factor(Idents(CD8), levels = target_order)
 CD8$celltype <- factor(CD8$celltype, levels = target_order)
 
+saveRDS(CD8, file = "CD8.rds")
+
 # UMAP plot of CD8+ T cells showing identified clusters (Fig. 7a) ###################################################################
 cell_color <- c( "#3AB7BC", "#2672A7","#ACD286", "#659E33", "#D3221E", "#C5AED0",
               "#D43080", "#633A8F", "#CD5D14", "#A2C7DB","#F3B970","#F09493")
