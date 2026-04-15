@@ -36,6 +36,8 @@ Idents(CD4)="celltype"
 Idents(CD4) <- factor(Idents(CD4), levels = target_order)
 CD4$celltype <- factor(CD4$celltype, levels = target_order)
 
+saveRDS(CD4, file = "CD4.rds")
+
 # UMAP plot of CD4+ T cells showing identified clusters (Fig. 6c) ###################################################################
 cell_color <- c( "#3AB7BC", "#2672A7","#659E33", "#CD5D14", "#DBA514", 
               "#D3221E", "#C5AED0", "#ACD286", "#A2C7DB")
