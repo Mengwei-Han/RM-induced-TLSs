@@ -1,6 +1,9 @@
+# Load required libraries
+library(Seurat)
+library(tidyverse)
+library(ggplot2)
 
-
-# Annotation and compositional analysis (Fig. 6b)####################################################################################
+# Annotation and compositional analysis of all cells (Fig. 6b)#######################################################################
 Idents(scRNA.harmony) <- "seurat_clusters"
 FeaturePlot(scRNA.harmony,features =c("Trac","Cd3e","Cd8a","Cd4",
                                    "Ncr1","Cd79a","Cd74","H2-Ab1","Cd14"),cols = c("lightgrey", "red4"))
