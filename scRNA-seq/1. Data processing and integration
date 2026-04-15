@@ -1,1 +1,97 @@
+# Load required libraries
+library(Seurat)
+library(tidyverse)
+library(ggplot2)
+library(harmony)
+library(DoubletFinder)
+library(ggrastr)
+library(ggplot2)
 
+# Data  quality control, normalization and integration
+C <- readRDS("C_seurat.rds")
+MP <- readRDS("MP_seurat.rds")
+RM <- readRDS("RM_seurat.rds")
+RMP <- readRDS("RMP_seurat.rds")
+
+C$orig.ident<-factor(rep("C",ncol(C)))
+Idents(C) <- "orig.ident"
+MP$orig.ident<-factor(rep("MP",ncol(MP)))
+Idents(MP) <- "orig.ident"
+RM$orig.ident<-factor(rep("RM",ncol(RM)))
+Idents(RM) <- "orig.ident"
+RMP$orig.ident<-factor(rep("RMP",ncol(RMP)))
+Idents(RMP) <- "orig.ident"
+
+C_F<- subset(C, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
+MP_F<- subset(MP, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
+RM_F <- subset(RM, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
+RMP_F <- subset(RMP, subset = nFeature_RNA > 300 & nFeature_RNA < 8000 & percent.mito < 2.5 & percent.hemo < 2.5 & nCount_RNA < 15000 & nCount_RNA > 1000)
+
+C_F <- NormalizeData(C_F,normalization.method = "LogNormalize", scale.factor = 10000)
+MP_F <- NormalizeData(MP_F,normalization.method = "LogNormalize", scale.factor = 10000)
+RM_F <- NormalizeData(RM_F,normalization.method = "LogNormalize", scale.factor = 10000)
+RMP_F <- NormalizeData(RMP_F,normalization.method = "LogNormalize", scale.factor = 10000)
+
+C_F.genes <- rownames(C_F)
+MP_F.genes <- rownames(MP_F)
+RM_F.genes <- rownames(RM_F)
+RMP_F.genes <- rownames(RMP_F)
+
+C_F <- ScaleData(C_F, features = C_F.genes, verbose = FALSE)
+MP_F <- ScaleData(MP_F, features = MP_F.genes, verbose = FALSE)
+RM_F <- ScaleData(RM_F, features = RM_F.genes, verbose = FALSE)
+RMP_F <- ScaleData(RMP_F, features = RMP_F.genes, verbose = FALSE)
+
+C_F <- RunPCA(C_F)
+MP_F <- RunPCA(MP_F)
+RM_F <- RunPCA(RM_F)
+RMP_F <- RunPCA(RMP_F)
+
+C_F <- RunUMAP(C_F,dims=1:20)
+MP_F <- RunUMAP(MP_F,dims=1:20)
+RM_F <- RunUMAP(RM_F,dims=1:20)
+RMP_F <- RunUMAP(RMP_F,dims=1:20)
+
+run_doublet_finder <- function(seu_obj) {
+  sweep.res.list <- paramSweep_v3(seu_obj, PCs = 1:20, sct = FALSE)
+  sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+  bcmvn <- find.pK(sweep.stats)
+  pK_value <- as.numeric(as.character(bcmvn$pK[which.max(bcmvn$BCmetric)]))
+  nExp_poi <- round(0.008 * ncol(seu_obj)^2 / 1000) 
+  seu_obj <- doubletFinder_v3(seu_obj, PCs = 1:20, pN = 0.25, pK = pK_value, nExp = nExp_poi, reuse.pANN = FALSE, sct = FALSE)
+  classification_col <- grep("DF.classifications", colnames(seu_obj@meta.data), value = TRUE)
+  print(table(seu_obj@meta.data[[classification_col]]))
+  return(list(obj = seu_obj, col = classification_col))
+}
+
+sample_list <- list(C = C_F, MP = MP_F, RM = RM_F, RMP = RMP_F)
+final_samples <- list()
+for (name in names(sample_list)) {
+  message(paste0("processing", name))
+  res <- run_doublet_finder(sample_list[[name]])
+  temp_obj <- res$obj
+  col_name <- res$col
+  DimPlot(temp_obj, group.by = col_name) 
+  temp_obj <- subset(temp_obj, cells = rownames(temp_obj@meta.data[temp_obj@meta.data[[col_name]] == "Singlet", ]))
+  final_samples[[name]] <- temp_obj
+}
+
+C_clean <- final_samples$C
+MP_clean <- final_samples$MP
+RM_clean <- final_samples$RM
+RMP_clean <- final_samples$RMP
+
+scRNA=merge(C_clean,y=c(MP_clean,RM_clean,RMP_clean))
+
+# Dimensionality reduction and unsupervised clustering
+scRNA.harmony <- NormalizeData(scRNA, normalization.method = "LogNormalize", scale.factor = 10000)
+scRNA.harmony <- FindVariableFeatures(scRNA.harmony, selection.method = "vst", nfeatures = 3000)
+scRNA.harmony <- ScaleData(scRNA.harmony, verbose = FALSE)                                                               
+scRNA.harmony <- RunPCA(scRNA.harmony, npcs = 30, verbose = FALSE)
+DefaultAssay(scRNA.harmony)="RNA"
+scRNA.harmony <- RunHarmony(scRNA.harmony, group.by.vars = "orig.ident")
+scRNA.harmony <- RunUMAP(scRNA.harmony, reduction = "harmony", dims = 1:30)
+scRNA.harmony <- FindNeighbors(scRNA.harmony, reduction = "harmony", dims = 1:30)
+scRNA.harmony <- FindClusters(scRNA.harmony, resolution = 1)
+
+saveRDS(scRNA.harmony, file = "scRNA.harmony.rds")
