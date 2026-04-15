@@ -2,15 +2,42 @@
 library(Seurat)
 library(tidyverse)
 library(scRepertoire)
+library(ggplot2)
 
-#
+# Integration of scRNA-seq and scTCR-seq data for CD4+ T cells
 CD4 <- readRDS("CD4.rds") # Derived from scRNA-seq 3.CD4+ T cells
-combined_tcr <- readRDS("combined_tcr.rds") # Derived from scTCR-seq 2.CD4+ T cells
+combined_tcr <- readRDS("combined_tcr.rds") # Derived from scTCR-seq 1.Data integration
 CD4.TCR <- combineExpression(combined_tcr,
                              CD4, 
                              cloneCall = "strict",
                              cloneSize = c(Single = 1, Small = 5, Medium = 20, Large = 100, Hyperexpanded = 500),
                              proportion = FALSE)
 
+# UMAP visualization showing the clonal expansion in CD4+ T cells (Fig. 6i) ########################################################
 size_color=c("#F0F921","#ED7953", "#9C179E","#0C0887","black")
 DimPlot(CD4.TCR, group.by = "cloneSize",reduction = "umap",cols=size_color)
+
+# UMAP visualization showing the clonal frequency in CD4+ T cells across groups (Fig. 6j) ##########################################
+umap_coords <- as.data.frame(Embeddings(CD4.TCR, reduction = "umap"))
+metadata <- CD4.TCR@meta.data
+plot_df <- cbind(umap_coords, metadata)
+
+ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = clonalProportion)) +
+  geom_point(alpha = 1, size = 1) + 
+  scale_color_gradientn(
+    colors = c("grey90", "red3", "darkred"),
+    values = scales::rescale(c(0, 0.5, 1))  # 让红色在较高的值才出现
+  ) +
+  facet_wrap(~orig.ident, ncol = 2)+
+  theme_classic() 
+
+plot_df %>%
+  arrange(!is.na(clonalProportion), clonalProportion) %>% 
+  ggplot(aes(x = UMAP_1, y = UMAP_2, color = clonalProportion)) +
+  geom_point(alpha = 1, size = 1)+
+  scale_color_gradientn(
+    colors = c("grey90", "red3", "darkred"),
+    values = scales::rescale(c(0, 0.5, 1))
+  ) +
+  facet_wrap(~orig.ident, ncol = 2) +
+  theme_classic()
