@@ -1,6 +1,5 @@
 # Load required libraries
 library(Seurat)         
-library(SeuratWrappers) 
 library(tidyverse)      
 library(ggsci)          
 library(ggrepel)        
