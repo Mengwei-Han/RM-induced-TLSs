@@ -4,8 +4,6 @@ library(tidyverse)
 library(ggplot2)
 library(harmony)
 library(DoubletFinder)
-library(ggrastr)
-library(ggplot2)
 
 # Data  quality control, normalization and integration
 C <- readRDS("C_seurat.rds")
