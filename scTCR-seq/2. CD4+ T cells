@@ -4,4 +4,13 @@ library(tidyverse)
 library(scRepertoire)
 
 #
-CD4 <- readRDS("CD4.rds")
+CD4 <- readRDS("CD4.rds") # Derived from scRNA-seq 3.CD4+ T cells
+combined_tcr <- readRDS("combined_tcr.rds") # Derived from scTCR-seq 2.CD4+ T cells
+CD4.TCR <- combineExpression(combined_tcr,
+                             CD4, 
+                             cloneCall = "strict",
+                             cloneSize = c(Single = 1, Small = 5, Medium = 20, Large = 100, Hyperexpanded = 500),
+                             proportion = FALSE)
+
+size_color=c("#F0F921","#ED7953", "#9C179E","#0C0887","black")
+DimPlot(CD4.TCR, group.by = "cloneSize",reduction = "umap",cols=size_color)
