@@ -1,18 +1,18 @@
 # Load required libraries
-library(Seurat)
-library(tidyverse)
-library(ggalluvial)
-library(ggsci)
-library(pheatmap)
-library(ggrepel)
-library(remotes)
-library(monocle3)
-library(Seurat)
+library(Seurat)         
 library(SeuratWrappers) 
-library(magrittr)
+library(tidyverse)      
+library(ggsci)          
+library(ggrepel)        
+library(ggalluvial)      
+library(viridis)         
+library(pheatmap)       
+library(ComplexHeatmap) 
+library(circlize)
 library(monocle)
+library(monocle3)
 library(igraph)
-library(ComplexHeatmap)
+
 # Annotations and clustering of CD8+ T cells
 scRNA.harmony <- readRDS("scRNA.harmony.rds")
 Idents(scRNA.harmony) <- "celltype"
@@ -33,7 +33,7 @@ top30 <- all.markers %>% group_by(cluster) %>% top_n(n=30,wt=avg_log2FC)
 Idents(CD8) <- "seurat_clusters"
 CD8_ID <- c("4"="ISG T","6"="ISG T","13"="ISG T",
             "11"="Tn","14"="NK-like T","5"="Temra",
-            "10"="Temra","7"="Early Tem","0"="Tem"
+            "10"="Temra","7"="Early Tem","0"="Tem",
             "9"="Tex-term", "2"="Tex-int", "8"="Tex-res",
             "16"="Tex-stem","15"="Cycling T","1"="Trm",
              "3"="Trm","17"="Early Tem","12"="Tex-res")
@@ -146,7 +146,7 @@ cds_CD8 <- learn_graph(cds,
 
 plot_cells(cds_CD8, color_cells_by = "celltype", label_groups_by_cluster = FALSE,
            label_leaves = FALSE, label_branch_points = TRUE)
-root_cells <- colnames(cds[, clusters(cds) == "Tn"]))
+root_cells <- colnames(cds[, clusters(cds) == "Tn"])
 cds_CD8 <- order_cells(cds_CD8, root_cells = root_cells)
 
 p_celltype=plot_cells(cds_CD8, 
@@ -251,34 +251,33 @@ deg <- FindMarkers(
   logfc.threshold = 0,   
   min.pct = 0.01         
 )
+
 deg$gene <- rownames(deg)
 deg$change <- "Stable"
-
 deg$change[deg$avg_log2FC > log2(1.2) &deg$p_val < 0.05] <- "Up"
-degs$change[deg$avg_log2FC < -log2(1.2) & deg$p_val < 0.05] <- "Down"
+deg$change[deg$avg_log2FC < -log2(1.2) & deg$p_val < 0.05] <- "Down"
 up_count <- sum(deg$change == "Up")
 down_count <- sum(deg$change == "Down")
 up <- deg %>% filter(change == "Up")
 down <- deg %>% filter(change == "Down") 
 plot_genes <- c(up$gene, down$gene)
 
-avg_exp <- AverageExpression(CD8, 
+avg_results <- AverageExpression(CD8, 
                              group.by = "orig.ident", 
                              features = plot_genes, 
                              slot = "data") %>% as.data.frame()
-all_avg_matrix <- as.matrix(avg_exp[[1]])
-target_cols <- c("C.RNA", "MP.RNA", "RM.RNA", "RMP.RNA")
-avg_exp <- avg_exp[, c("RNA.C", "RNA.MP", "RNA.RM", "RNA.RMP")]
+avg_exp <- as.data.frame(avg_results$RNA)
+target_cols <- c("RNA.C", "RNA.MP", "RNA.RM", "RNA.RMP")
+avg_exp <- avg_exp[plot_genes, target_cols]
 scaled_matrix <- t(scale(t(avg_exp)))
 
 Heatmap(scaled_matrix,  
-        col = colorRamp2(c(-2, 0, 2), c("blue4", "cornsilk", "red3")),
-        cluster_rows = TRUE,       
-        cluster_columns = F,    
+        col = colorRamp2(c(-2, 0, 2), c("blue4", "white", "red3")),
+        cluster_rows = TRUE,
+        cluster_columns = FALSE,    
         show_row_names = TRUE, 
         row_names_gp = gpar(fontsize = 8),
         column_names_gp = gpar(fontsize = 12, fontface = "bold"),
-        column_title = "Average Expression",
-        row_split = factor(c(rep("Up-regulated", nrow(top_up)), 
-                             rep("Down-regulated", nrow(top_down))),
+        row_split = factor(c(rep("Up-regulated", nrow(up)), 
+                             rep("Down-regulated", nrow(down))),
                            levels = c("Up-regulated", "Down-regulated")))
