@@ -1,8 +1,11 @@
 
+library(Seurat)
 library(CellChat)
+library(tidyverse)
 library(ggalluvial)
 library(ggsci)
 library(pheatmap)
+library(ggrepel)
 
 # Annotations and clustering of CD4+ T cells
 scRNA.harmony <- readRDS("scRNA.harmony.rds")
@@ -128,3 +131,111 @@ avg_exp_scaled <- t(scale(t(avg_exp)))
 pheatmap(avg_exp_scaled, 
          color = colorRampPalette(c("blue4", "cornsilk", "red3"))(100),
          cluster_cols = F)
+
+# Differential gene expression in clusters of CD4+ T Cells (Fig. 6k) ###############################################################
+Idents(CD4) <- "celltype" 
+clusters <- levels(Idents(CD4))
+all_deg_list <- list()
+for (i in clusters) {
+  deg <- FindMarkers(CD4, 
+                     ident.1 = "RMP", 
+                     ident.2 = "C", 
+                     group.by = "orig.ident", # 指定分组列
+                     subset.ident = i,        # 锁定当前 Cluster
+                     logfc.threshold = 0, 
+                     min.pct = 0.01)
+  deg$gene <- rownames(deg)
+  deg$cluster <- i
+  all_deg_list[[i]] <- deg
+}
+all_deg_df <- do.call(rbind, all_deg_list)
+
+all_deg_df$group <- "Stable"
+all_deg_df$group[all_deg_df$avg_log2FC > log2(1.2)] <- "Up"
+all_deg_df$group[all_deg_df$avg_log2FC < (-log2(1.2))] <- "Down"
+
+stats_df <- all_deg_df %>%
+  group_by(cluster, group) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  filter(group %in% c("Up", "Down")) 
+
+
+stats_df <- stats_df %>%
+  mutate(y_pos = ifelse(group == "Up", 1.7, -1.7),
+         label_text = paste0(group, ": ", count))
+my_pos <- position_jitter(width = 0.4, seed = 1)
+
+ggplot(all_deg_df, aes(x = cluster, y = avg_log2FC, color = group)) + 
+  geom_jitter(position = my_pos, alpha = 1, size = 1, shape = 16) +
+  scale_color_manual(values = c("Up" = "red3", "Down" = "blue4", "Stable" = "grey80")) +
+  geom_text_repel(data = subset(all_deg_df, 
+                                (cluster == "Tn" & gene %in% c("Id2","Cxcr5","Ctla4")) | 
+                                  (cluster == "Tem" & gene %in% c("Il27ra", "Lag3","Ccr5","Ccl4","Gzmk","Bcl2")) |
+                                  (cluster == "Trm" & gene %in% c("Ccr5", "Ltb","Gzma","Ctla4","Isg15")) |
+                                  (cluster == "Trm/Th1" & gene %in% c("Cd80","Gzmk","Ltb","Tnf",
+                                                                  "Gzma","Ifng","Cxcr3","Pdcd1","Tnfrsf9")) |
+                                  (cluster == "Tfh/Th1" & gene %in% c("Ifng","Ccl5","Csf2","S100a4","Havcr2","Ccr5",
+                                                                      "Pdcd1","Bcl2","Tox")) |
+                                  (cluster == "Th17" & gene %in% c("Ccl5", "Cd28","Tnfsf8","Cd40lg","Tnfsf10","Ccr9",
+                                                                   "Pdcd1","Bcl2","Tox")) |
+                                  (cluster == "Treg" & gene %in% c("Cd74", "Ccl5","Lag3","Il10","Gzmb")) |
+                                  (cluster == "ISG Th" & gene %in% c("Ifit2","Ifit1","Ifit3","Ltb", "Ccl4","Csf1")) |
+                                  (cluster == "blood Tcm" & gene %in% c("Ccl5","Il12rb2","Nfkb2", "Ccl4","Stat1"))),
+                  aes(label = gene),
+                  color = "black", 
+                  max.overlaps = Inf,
+                  size = 2,
+                  segment.color = "black", 
+                  box.padding = 0.2,
+                  show.legend = FALSE) +
+  geom_text(data = stats_df, 
+            aes(x = cluster, y = y_pos, label = label_text, color = group),
+            size = 1, fontface = "bold", show.legend = FALSE) +
+  theme_classic() +
+  geom_hline(yintercept = c(log2(1.2), (-log2(1.2))), linetype = "dashed", color = "grey50") +
+  coord_fixed(ratio = 1, ylim = c(-1.8, 1.8)) +
+  scale_y_continuous(breaks = seq(-2, 2, by = 0.5))+
+  scale_x_discrete(limits = c("Tn","Tem","Trm","Trm/Th1","Tfh/Th1", "Th17","Treg","ISG Th","blood Tcm"))
+
+# Violin plot show the expresion of Ifng, Ltb, Tnf and Gzmb in clusters across the four groups (Fis. S7c) ##########################
+Idents(CD4) <- "celltype"
+CD4$orig.ident <- factor(CD4$orig.ident, levels = c("C", "MP", "RM", "RMP"))
+p_Ifng <- VlnPlot(CD4, 
+               features =c("Ifng"),
+               split.by = "orig.ident", 
+               pt.size = 0) + 
+  geom_boxplot(aes(group = interaction(ident, split)), 
+               width = 0.15, 
+               fill = "white", 
+               position = position_dodge(0.9), 
+               outlier.shape = NA)
+
+p_Ltb <- VlnPlot(CD4, 
+              features =c("Ltb"),
+              split.by = "orig.ident", 
+              pt.size = 0) + 
+  geom_boxplot(aes(group = interaction(ident, split)), 
+               width = 0.15, 
+               fill = "white", 
+               position = position_dodge(0.9), 
+               outlier.shape = NA)
+
+p_Tnf <- VlnPlot(CD4, 
+              features =c("Tnf"),
+              split.by = "orig.ident", 
+              pt.size = 0) + 
+  geom_boxplot(aes(group = interaction(ident, split)), 
+               width = 0.15, 
+               fill = "white", 
+               position = position_dodge(0.9), 
+               outlier.shape = NA)
+
+p_Gzmb <- VlnPlot(CD4, 
+               features =c("Gzmb"),
+               split.by = "orig.ident", 
+               pt.size = 0) + 
+  geom_boxplot(aes(group = interaction(ident, split)), 
+               width = 0.15, 
+               fill = "white", 
+               position = position_dodge(0.9), 
+               outlier.shape = NA)
