@@ -1,0 +1,23 @@
+# Load required libraries
+library(Seurat)
+library(tidyverse)
+library(scRepertoire)
+
+# Data integration
+C_TCR <- read.table("C_TCR_filtered_contig_annotations.tsv", sep = "\t", header = TRUE)
+MP_TCR <- read.table("MP_TCR_filtered_contig_annotations.tsv", sep = "\t", header = TRUE)
+RM_TCR <- read.table("RM_TCR_filtered_contig_annotations.tsv", sep = "\t", header = TRUE)
+RMP_TCR <- read.table("RMP_TCR_filtered_contig_annotations.tsv",sep = "\t", header = TRUE)
+
+tcr_list <- list(C_TCR, MP_TCR, RM_TCR, RMP_TCR)
+combined_tcr <- combineTCR(tcr_list, samples = c("C", "MP", "RM", "RMP")) 
+head(combined_tcr[[1]]$barcode, 3)
+mapping <- c("C" = "_1", "MP" = "_2", "MN" = "_3", "MNP" = "_4")
+for (i in seq_along(combined_tcr)) {
+  sample_name <- names(combined_tcr)[i]
+  suffix <- mapping[sample_name]
+  combined_tcr[[i]]$barcode <- gsub(paste0("^", sample_name, "_"), "", combined_tcr[[i]]$barcode)
+  combined_tcr[[i]]$barcode <- paste0(combined_tcr[[i]]$barcode, suffix)
+}
+
+saveRDS(combined_tcr, file = "combined_tcr.rds")
