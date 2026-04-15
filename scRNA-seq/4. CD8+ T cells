@@ -67,7 +67,7 @@ plot_marker <- DotPlot(CD8, features = marker_gene, group.by = "celltype", dot.s
 # Violin plot demonstrating exhaustion, effector function, and Stemness signatures across CD8+ T cell clusters (Fig. 7c) ############
 features_list <- list(
   Exhaustion = c("Pdcd1", "Tox", "Cxcl13", "Tigit", "Ctla4", "Tnfrsf9", "Havcr2", "Lag3"),
-  Effector = c("Cst7", "Gzmk", "Gzma", "Nkg7", "Ifng", "Prf1", "Gzmb", "Gnly"),
+  Effector = c("Cst7", "Gzmk", "Gzma", "Nkg7", "Ifng", "Prf1", "Gzmb"),
   Stemness = c("Btla", "Foxp3", "Tnfrsf4", "Tcf7", "Eef1a1", "Sell", "Ccr7", "Il6r", "Igfbp4", "Igfl2"))
 
 for(name in names(features_list)){
