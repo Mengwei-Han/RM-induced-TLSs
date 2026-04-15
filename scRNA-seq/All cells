@@ -7,7 +7,7 @@ library(DoubletFinder)
 library(ggrastr)
 library(ggplot2)
 
-# Data normalization, quality control, integration
+# Data  quality control, normalization and integration
 C <- readRDS("C_seurat.rds")
 MP <- readRDS("MP_seurat.rds")
 RM <- readRDS("RM_seurat.rds")
