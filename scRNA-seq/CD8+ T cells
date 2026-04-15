@@ -1,1 +1,31 @@
+# Load required libraries
+library(Seurat)
+library(tidyverse)
+library(ggalluvial)
+library(ggsci)
+library(pheatmap)
+library(ggrepel)
 
+# Annotations and clustering of CD8+ T cells
+scRNA.harmony <- readRDS("scRNA.harmony.rds")
+Idents(scRNA.harmony) <- "celltype"
+CD8 <- subset(scRNA.harmony, idents = "CD8+ T")
+CD8 <- NormalizeData(CD8) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
+CD8 <- FindNeighbors(CD8, reduction = "harmony", dims = 1:30)
+CD8 <- FindClusters(CD8, resolution = 1.5)
+CD8 <- RunUMAP(CD8, dims = 1:30, reduction = "harmony")
+
+DefaultAssay(CD8) <- "RNA"
+markers <- FindAllMarkers(object = CD8, test.use = "wilcox",
+                         only.pos = T,
+                         min.pct = 0.25,
+                         logfc.threshold = 0.25)
+all.markers <- markers %>% dplyr::select(gene,everything()) %>%subset(p_val<0.05)
+top30 <- all.markers %>% group_by(cluster) %>% top_n(n=30,wt=avg_log2FC)
+
+CD4_ID <- c("4"="ISG T","6"="ISG T","13"="ISG T",
+            "11"="Tn","14"="NK-like T","5"="Temra",
+            "10"="Temra","7"="Early Tem","0"="Tem"
+            "9"="Tex-term", "2"="Tex-int", "8"="Tex-res",
+            "16"="Tex-stem","15"="Cycling T","1"="Trm",
+             "3"="Trm","17"="Early Tem","12"="Tex-res")
