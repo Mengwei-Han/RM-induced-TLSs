@@ -13,7 +13,7 @@ library(monocle3)
 library(igraph)
 
 # Annotations and clustering of CD8+ T cells
-scRNA.harmony <- readRDS("scRNA.harmony.rds")
+scRNA.harmony <- readRDS("scRNA.harmony.rds") # Derived from scRNA-seq 1.Data processing and integration
 Idents(scRNA.harmony) <- "celltype"
 CD8 <- subset(scRNA.harmony, idents = "CD8+ T")
 CD8 <- NormalizeData(CD8) %>% FindVariableFeatures() %>% ScaleData() %>% RunPCA(verbose=FALSE)
