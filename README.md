@@ -1,33 +1,3 @@
 # RM-induced-TLSs
 This repository contains all scripts and analysis pipelines for bulk RNA-seq, single-cell RNA-seq (scRNA-seq), and single-cell TCR-seq (scTCR-seq) data generated in this study.
-The bioinformatic pipeline was implemented in R (version 4.5.2). The following software packages were essential for the analysis:
-CellChat        	1.6.1
-clusterProfiler	  4.18.4
-ComplexHeatmap	  2.26.0
-ComplexUpset	    1.3.6
-data.table	      1.17.8
-DoubletFinder	    2.0.3
-enrichplot	      1.30.4
-ggalluvial	      0.12.6
-ggforce         	0.5.0
-ggplot2         	4.0.1
-ggpubr	          0.6.2
-ggrepel	          0.9.6
-ggsci	            4.2.0
-GSVA	            2.4.1
-harmony	          1.2.4
-igraph	          2.0.3
-jsonlite	        2.0.0
-limma           	3.66.0
-monocle         	2.38.0
-monocle3	        1.4.26
-org.Hs.eg.db    	3.22.0
-org.Mm.eg.db	    3.22.0
-patchwork       	1.3.2
-pheatmap        	1.0.13
-readxl	          1.4.5
-scRepertoire	    2.6.2
-Seurat	          4.4.0
-tidyverse	        2.0.0
-VennDiagram	      1.7.3
-viridis	          0.6.5
+The bioinformatic pipeline was implemented in R (v4.5.2). The following software packages were essential for the analysis: CellChat (v1.6.1), clusterProfiler (v4.18.4), ComplexHeatmap (v2.26.0), ComplexUpset (v1.3.6), data.table (v1.17.8), DoubletFinder (v2.0.3), enrichplot (v1.30.4), ggalluvial (v0.12.6), ggforce (v0.5.0), ggplot2 (v4.0.1), ggpubr (v0.6.2), ggrepel (v0.9.6), ggsci (v4.2.0), GSVA (v2.4.1), harmony (v1.2.4), igraph (v2.0.3), jsonlite (v2.0.0), limma (v3.66.0), monocle (v2.38.0), monocle3 (v1.4.26), org.Hs.eg.db (v3.22.0), org.Mm.eg.db (v3.22.0), patchwork (v1.3.2), pheatmap (v1.0.13), readxl (v1.4.5), scRepertoire (v2.6.2), Seurat (v4.4.0), tidyverse (v2.0.0), VennDiagram (v1.7.3), viridis (v0.6.5)
