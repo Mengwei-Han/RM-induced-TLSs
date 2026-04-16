@@ -1,7 +1,6 @@
 # RM-induced-TLSs
 This repository contains all scripts and analysis pipelines for bulk RNA-seq, single-cell RNA-seq (scRNA-seq), and single-cell TCR-seq (scTCR-seq) data generated in this study.
 The bioinformatic pipeline was implemented in R (version 4.5.2). The following software packages were essential for the analysis:
-Package          Version
 CellChat        	1.6.1
 clusterProfiler	  4.18.4
 ComplexHeatmap	  2.26.0
