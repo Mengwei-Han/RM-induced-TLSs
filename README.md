@@ -1,3 +1,3 @@
-# RM-induced-TLSs
+# R@M-induced-TLSs
 This repository contains all scripts and analysis pipelines for bulk RNA-seq, single-cell RNA-seq (scRNA-seq), and single-cell TCR-seq (scTCR-seq) data generated in this study.
 The bioinformatic pipeline was implemented in R (v4.5.2). The following software packages were essential for the analysis: CellChat (v1.6.1), clusterProfiler (v4.18.4), ComplexHeatmap (v2.26.0), ComplexUpset (v1.3.6), data.table (v1.17.8), DoubletFinder (v2.0.3), enrichplot (v1.30.4), ggalluvial (v0.12.6), ggforce (v0.5.0), ggplot2 (v4.0.1), ggpubr (v0.6.2), ggrepel (v0.9.6), ggsci (v4.2.0), GSVA (v2.4.1), harmony (v1.2.4), igraph (v2.0.3), jsonlite (v2.0.0), limma (v3.66.0), monocle (v2.38.0), monocle3 (v1.4.26), org.Hs.eg.db (v3.22.0), org.Mm.eg.db (v3.22.0), patchwork (v1.3.2), pheatmap (v1.0.13), readxl (v1.4.5), scRepertoire (v2.6.2), Seurat (v4.4.0), tidyverse (v2.0.0), VennDiagram (v1.7.3), viridis (v0.6.5)
