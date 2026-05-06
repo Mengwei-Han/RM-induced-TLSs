@@ -1,6 +1,5 @@
 # Load required libraries
 library(tidyverse)
-library(readxl)
 library(data.table)
 library(limma)
 library(pheatmap)
@@ -15,7 +14,7 @@ library(org.Mm.eg.db)
 library(enrichplot)
 
 # Data normalization, transformation, and quality control
-data <- read_excel("gene expression.xlsx", col_names = TRUE) %>% column_to_rownames(var = "GeneSymbol")
+data <- fread("All_sample_FPKM.csv", header = TRUE) %>% column_to_rownames(var = "GeneSymbol")
 fpkm_to_tpm <- function(fpkm) {return(exp(log(fpkm) - log(sum(fpkm)) + log(1e6)))}
 tpms <- apply(data, 2, fpkm_to_tpm)
 
